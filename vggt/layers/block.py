@@ -36,7 +36,6 @@ class LayerNormMLP(nn.Module):
         return x
 
 
-# 디버깅용 전역 카운터
 _debug_layer_count = {"count": 0}
 
 def reset_debug_counter():
@@ -98,11 +97,15 @@ class Block(nn.Module):
         info_map=None,
         cal_merge=False,
         m_u=None,
-        use_dynamic_protect: bool = False,  # Exp 2: GA Token 비율 동적
-        use_dynamic_grid: bool = False,     # Exp 3: Grid stride 동적
-        use_sttm: bool = False,             # Exp 5: STTM merge ← 새로 추가
-        sttm_spatial_thresh: float = 0.8,  # STTM 공간 merge 임계값
-        sttm_temporal_thresh: float = 0.6, # STTM 시간 merge 임계값
+        use_dynamic_protect: bool = False,
+        use_dynamic_grid: bool = False,
+        use_sttm: bool = False,
+        use_quadtree_bipartite: bool = False,   # ← 새 플래그
+        sttm_spatial_thresh: float = 0.8,
+        sttm_temporal_thresh: float = 0.6,
+        qt_spatial_thresh: float = 0.8,          # ← Quadtree-Bipartite용
+        qt_root_block_size: int = 8,
+        qt_min_block_size: int = 2,
         verbose: bool = True,
     ):
         x_norm = self.norm1(x)
@@ -113,46 +116,48 @@ class Block(nn.Module):
             merge_ratio = 0.9
             r = int(x_norm.shape[1] * merge_ratio)
 
-            # 디버깅 출력 (기존 유지)
             layer_idx = _debug_layer_count["count"]
             _debug_layer_count["count"] += 1
-            should_debug = self.debug and (
-                self.debug_layer is None or layer_idx == self.debug_layer
-            )
-            if should_debug:
-                B, N, C = x_norm.shape
-                tokens_per_img = self.patch_width * self.patch_height + 5
-                num_imgs = N // tokens_per_img
-                protect_ratio = 0.1
-                ga_per_frame  = max(1, int(self.patch_width * self.patch_height * protect_ratio))
-                dst_per_frame = (self.patch_width // 2) * (self.patch_height // 2)
-                src_per_frame = self.patch_width * self.patch_height - ga_per_frame - dst_per_frame
-                special = 5
-                print(f"\n{'='*60}")
-                print(f"[DEBUG] Global Attention Layer {layer_idx} | cal_merge=True")
-                print(f"{'='*60}")
-                print(f"  총 프레임 수:            {num_imgs}장")
-                print(f"  전체 토큰 수 (merge 전): {N:,}개")
-                print(f"  프레임당 전체 토큰:      {tokens_per_img}개")
-                print(f"    ├── 특수 토큰:         {special}개 (항상 보호)")
-                print(f"    ├── GA Token:          {ga_per_frame}개 ({protect_ratio*100:.0f}%, 보호)")
-                print(f"    ├── Dst Token:         {dst_per_frame}개 (살아남음)")
-                print(f"    └── Src Token:         {src_per_frame}개 (제거됨)")
-                print(f"  merge 후 예상 토큰:      {(special + ga_per_frame + dst_per_frame) * num_imgs:,}개")
-                print(f"  압축률:                  {(1 - (special + ga_per_frame + dst_per_frame) / tokens_per_img)*100:.1f}%")
-                print(f"{'='*60}")
 
             with torch.no_grad():
-                # -----------------------------------------------
-                # STTM merge (Exp 5)
-                # use_sttm=True → STTM 공간+시간 merge
-                # -----------------------------------------------
-                if use_sttm:
+                if use_quadtree_bipartite:
+                    # ============================================
+                    # 새 모드: Quadtree + Bipartite merging
+                    # ============================================
+                    from merging.sttm_bipartite_merge import token_merge_quadtree_bipartite
+
+                    tokens_per_img = self.patch_width * self.patch_height + 5
+                    num_imgs = x_norm.shape[1] // tokens_per_img
+
+                    # x_norm에서 패치 부분만 추출 → [num_imgs, C, H, W]
+                    patches = x_norm[0].view(num_imgs, tokens_per_img, -1)[:, 5:, :]
+                    C = patches.shape[-1]
+                    patches = patches.view(num_imgs, self.patch_height, self.patch_width, C)
+                    patches = patches.permute(0, 3, 1, 2).contiguous()
+
+                    m, u = token_merge_quadtree_bipartite(
+                        x_norm,
+                        patch_features=patches,
+                        w=self.patch_width,
+                        h=self.patch_height,
+                        r=r,
+                        spatial_thresh=qt_spatial_thresh,
+                        root_block_size=qt_root_block_size,
+                        min_block_size=qt_min_block_size,
+                        no_rand=False,
+                        generator=generator,
+                        enable_protection=True,
+                        info_map=info_map,
+                        use_dynamic_protect=use_dynamic_protect,
+                        protect_ratio=0.1,
+                        verbose=verbose,
+                    )
+
+                elif use_sttm:
+                    # 기존 STTM 그대로
                     from merging.sttm_merge import token_merge_sttm
                     tokens_per_img = self.patch_width * self.patch_height + 5
                     num_imgs = x_norm.shape[1] // tokens_per_img
-                    # cal_merge=True → STTM 새로 계산 + tyxyx_tlbr 캐시 저장
-                    # cal_merge=False → 캐시된 tyxyx_tlbr 재사용
                     cached_tlbr = getattr(self, '_sttm_cached_tlbr', None)
                     m, u, new_tlbr, tokens_after_sttm = token_merge_sttm(
                         x_norm,
@@ -166,21 +171,16 @@ class Block(nn.Module):
                         verbose=verbose,
                         cached_tlbr=cached_tlbr,
                     )
-                    # 새로 계산된 경우 캐시 업데이트
                     if new_tlbr is not None:
                         self._sttm_cached_tlbr = new_tlbr
                         self._sttm_tokens_after = tokens_after_sttm
                 else:
-                    # -----------------------------------------------
-                    # 기존 방식: GA/Dst/Src merge
-                    # -----------------------------------------------
-                    # Step 1: protect_ratio 결정
+                    # 기존 방식 (baseline / dynamic_protect / dynamic_grid / dynamic_all)
                     if use_dynamic_protect and info_map is not None:
-                        protect_ratio = None
+                        protect_ratio_use = None
                     else:
-                        protect_ratio = 0.1
+                        protect_ratio_use = 0.1
 
-                    # Step 2: grid stride 결정
                     if use_dynamic_grid and info_map is not None:
                         from merging.complexity import get_dynamic_grid_stride
                         stride = get_dynamic_grid_stride(
@@ -192,16 +192,13 @@ class Block(nn.Module):
 
                     m, u = token_merge_bipartite2d(
                         x_norm,
-                        self.patch_width,
-                        self.patch_height,
-                        sx, sy,
-                        r,
-                        False,
-                        generator,
+                        self.patch_width, self.patch_height,
+                        sx, sy, r,
+                        False, generator,
                         enable_protection=True,
                         info_map=info_map,
                         use_dynamic_protect=use_dynamic_protect,
-                        protect_ratio=protect_ratio if protect_ratio is not None else 0.1,
+                        protect_ratio=protect_ratio_use if protect_ratio_use is not None else 0.1,
                         verbose=verbose,
                     )
 
