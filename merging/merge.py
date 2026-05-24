@@ -57,6 +57,10 @@ def token_merge_bipartite2d_multi_batch(
     generator: Optional[torch.Generator] = None,
     enable_protection: bool = False,
     info_map=None,  # info_map [N,1,Hp,Wp]
+    protect_ratio=0.1,
+    protect_nms: bool = False,
+    protect_aux_map=None,
+    protect_aux_ratio: float = 0.0,
 ):
 
     B, N, C = metric.shape
@@ -65,10 +69,14 @@ def token_merge_bipartite2d_multi_batch(
     if info_map is not None:
         img_per_batch = info_map.shape[0] // B 
         info_map = info_map.view(B, img_per_batch, *info_map.shape[1:]) 
+    if protect_aux_map is not None:
+        img_per_batch = protect_aux_map.shape[0] // B
+        protect_aux_map = protect_aux_map.view(B, img_per_batch, *protect_aux_map.shape[1:])
 
     for b in range(B):
         metric_b = metric[b:b+1]  # shape [1, N, C]
         info_map_b = info_map[b:b+1].squeeze(0) if info_map is not None else None
+        protect_aux_map_b = protect_aux_map[b:b+1].squeeze(0) if protect_aux_map is not None else None
 
         merge_b, unmerge_b = token_merge_bipartite2d(
             metric_b, w, h, sx, sy, r,
@@ -76,6 +84,10 @@ def token_merge_bipartite2d_multi_batch(
             generator=generator,
             enable_protection=enable_protection,
             info_map=info_map_b,
+            protect_ratio=protect_ratio,
+            protect_nms=protect_nms,
+            protect_aux_map=protect_aux_map_b,
+            protect_aux_ratio=protect_aux_ratio,
         )
         per_batch_ops.append((merge_b, unmerge_b))
 
@@ -121,6 +133,20 @@ def compute_info_maps(
     patch_tokens: torch.Tensor,    # [N, P, C] 
     var_win: int = 3,
     proj_dim: int = 32,
+    depth_map: Optional[torch.Tensor] = None,  # [N, H, W] or [N, 1, H, W]
+    depth_map_is_boundary: bool = False,
+    edge_weight: float = 0.7,
+    variance_weight: float = 0.3,
+    depth_boundary_weight: float = 0.0,
+    interaction_weight: float = 0.0,
+    interaction_mode: str = "sqrt",
+    laplacian_weight: float = 0.0,
+    adaptive_weights: bool = False,
+    adaptive_protect_ratio: bool = False,
+    protect_base_ratio: float = 0.1,
+    protect_complexity_lambda: float = 0.0,
+    protect_min_ratio: float = 0.05,
+    protect_max_ratio: float = 0.2,
 ):
 
     images_normed = images_normed.to(torch.float32)
@@ -137,7 +163,8 @@ def compute_info_maps(
 
     tok = patch_tokens.view(N, Hp, Wp, C).permute(0, 3, 1, 2).contiguous()  # [N,C,Hp,Wp]
 
-    with torch.random.fork_rng(devices=[device]):
+    fork_devices = [device] if device.type == "cuda" else []
+    with torch.random.fork_rng(devices=fork_devices):
         Pmat = torch.empty(C, proj_dim, device=device)
         torch.nn.init.orthogonal_(Pmat)
     X = torch.einsum('nchw,cd->ndhw', tok, Pmat)   # [N,d,Hp,Wp]
@@ -157,6 +184,10 @@ def compute_info_maps(
     grad = torch.sqrt(gx*gx + gy*gy + 1e-12)    # [N,1,Hc,Wc]
     grad_map_tok = F.adaptive_avg_pool2d(grad, (Hp, Wp))  # [N,1,Hp,Wp]
 
+    klap = torch.tensor([[0., 1., 0.], [1., -4., 1.], [0., 1., 0.]], device=device).view(1, 1, 3, 3)
+    lap = F.conv2d(gray, klap, padding=1).abs()
+    lap_map_tok = F.adaptive_avg_pool2d(lap, (Hp, Wp))
+
     def norm01(t):
         tmin = t.amin(dim=(-2,-1), keepdim=True)
         tmax = t.amax(dim=(-2,-1), keepdim=True)
@@ -164,15 +195,86 @@ def compute_info_maps(
 
     var_n  = norm01(var_map)
     grad_n = norm01(grad_map_tok)
-    info   = 0.3* var_n + 0.7* grad_n                 # [N,1,Hp,Wp]
+    lap_n = norm01(lap_map_tok)
+    interaction_product = (grad_n * var_n).clamp_min(0.0)
+    if interaction_mode == "product":
+        interaction_n = interaction_product
+    elif interaction_mode == "sqrt":
+        interaction_n = torch.sqrt(interaction_product + 1e-8)
+    else:
+        raise ValueError(f"Unknown GA interaction mode: {interaction_mode}")
+    grad_mean = grad_n.mean(dim=(-2, -1), keepdim=True)
+    var_mean = var_n.mean(dim=(-2, -1), keepdim=True)
+
+    depth_boundary_map = torch.zeros_like(grad_map_tok)
+    if depth_map is not None:
+        if depth_map.dim() == 3:
+            depth_map = depth_map.unsqueeze(1)
+        depth_map = depth_map.to(torch.float32)[..., :Hc, :Wc]
+
+        if depth_map_is_boundary:
+            depth_boundary_map = F.adaptive_avg_pool2d(depth_map.abs(), (Hp, Wp))
+        else:
+            dx = F.pad(depth_map[..., :, 1:] - depth_map[..., :, :-1], (0, 1, 0, 0))
+            dy = F.pad(depth_map[..., 1:, :] - depth_map[..., :-1, :], (0, 0, 0, 1))
+            depth_grad = torch.sqrt(dx * dx + dy * dy + 1e-12)
+            depth_boundary_map = F.adaptive_avg_pool2d(depth_grad, (Hp, Wp))
+
+    depth_n = norm01(depth_boundary_map)
+    if adaptive_weights:
+        denom = grad_mean + var_mean + 1e-8
+        edge_w = (var_mean / denom).to(grad_n.dtype)
+        variance_w = (grad_mean / denom).to(var_n.dtype)
+        depth_w = torch.full_like(edge_w, depth_boundary_weight)
+        interaction_w = torch.full_like(edge_w, interaction_weight)
+        laplacian_w = torch.full_like(edge_w, laplacian_weight)
+        total_weight = edge_w + variance_w + depth_w + interaction_w + laplacian_w
+    else:
+        total_weight = edge_weight + variance_weight + depth_boundary_weight + interaction_weight + laplacian_weight
+        if total_weight <= 0:
+            raise ValueError("At least one GA metric weight must be positive.")
+        edge_w = edge_weight
+        variance_w = variance_weight
+        depth_w = depth_boundary_weight
+        interaction_w = interaction_weight
+        laplacian_w = laplacian_weight
+
+    info = (
+        variance_w * var_n
+        + edge_w * grad_n
+        + depth_w * depth_n
+        + interaction_w * interaction_n
+        + laplacian_w * lap_n
+    ) / total_weight
     info_n = norm01(info)
     gamma = 1.4  
     info_n = info_n ** gamma
     info_up = F.interpolate(info_n, size=(Hc, Wc), mode='bilinear', align_corners=False)  # [N,1,Hc,Wc]
 
+    complexity = (grad_mean + var_mean).flatten()
+    if adaptive_protect_ratio:
+        protect_ratio = protect_base_ratio + protect_complexity_lambda * complexity
+        protect_ratio = protect_ratio.clamp(protect_min_ratio, protect_max_ratio)
+    else:
+        protect_ratio = torch.full_like(complexity, protect_base_ratio)
+
+    base_total_weight = edge_weight + variance_weight
+    if base_total_weight > 0:
+        base_info = (variance_weight * var_n + edge_weight * grad_n) / base_total_weight
+        base_info_n = norm01(base_info) ** gamma
+    else:
+        base_info_n = info_n
+
     return {
         "var_map": var_map,               # [N,1,Hp,Wp]
         "grad_map_tok": grad_map_tok,     # [N,1,Hp,Wp]
+        "laplacian_map": lap_map_tok,     # [N,1,Hp,Wp]
+        "depth_boundary_map": depth_boundary_map,  # [N,1,Hp,Wp]
+        "depth_info_map": depth_n.to(torch.bfloat16),  # [N,1,Hp,Wp]
+        "base_info_map": base_info_n.to(torch.bfloat16),  # [N,1,Hp,Wp]
+        "interaction_map": interaction_n,  # [N,1,Hp,Wp]
+        "complexity": complexity,          # [N]
+        "protect_ratio": protect_ratio,    # [N]
         "info_map": info_n.to(torch.bfloat16),               # [N,1,Hp,Wp]
         "info_up": info_up,               # [N,1,Hc,Wc]
         "Hp": Hp, "Wp": Wp, "Hc": Hc, "Wc": Wc
@@ -190,7 +292,10 @@ def token_merge_bipartite2d(
     enable_protection: bool = False,
     info_map=None,
     use_dynamic_protect: bool = False,  # ← 동적 protect_ratio 사용 여부
-    protect_ratio: float = 0.1,         # ← [수정] 인자로 받음 (기본값 0.1 유지)
+    protect_ratio=0.1,
+    protect_nms: bool = False,
+    protect_aux_map=None,
+    protect_aux_ratio: float = 0.0,
     verbose: bool = True,               # ← 프레임별 출력 여부
 ) -> Tuple[Callable, Callable]:
     """
@@ -230,10 +335,7 @@ def token_merge_bipartite2d(
         if enable_protection:
             if info_map is not None:
                 info = info_map[:, 0].to(metric.device)  # [num_imgs, Hp, Wp]
-
-                # ========================================
-                # 핵심 수정: 동적 protect_ratio 결정
-                # ========================================
+                aux_info = protect_aux_map[:, 0].to(metric.device) if protect_aux_map is not None else None
                 if use_dynamic_protect:
                     protect_ratio = get_dynamic_protect_ratio_single(
                         info,
@@ -241,16 +343,49 @@ def token_merge_bipartite2d(
                         max_ratio=0.20,
                         verbose=verbose,
                     )
-                # else: 인자로 받은 protect_ratio 그대로 사용 (기본 0.1)
+                if torch.is_tensor(protect_ratio):
+                    protect_ratios = protect_ratio.to(metric.device).flatten().to(torch.float32)
+                    if protect_ratios.numel() == 1:
+                        protect_ratios = protect_ratios.expand(num_imgs)
+                    elif protect_ratios.numel() != num_imgs:
+                        repeats = (num_imgs + protect_ratios.numel() - 1) // protect_ratios.numel()
+                        protect_ratios = protect_ratios.repeat(repeats)[:num_imgs]
+                else:
+                    protect_ratios = torch.full((num_imgs,), float(protect_ratio), device=metric.device)
 
-                k = max(1, int(info.shape[-2] * info.shape[-1] * protect_ratio))
-                topk_idx = info.flatten(1).topk(k, dim=1).indices  # [num_imgs, k]
-                offsets = torch.arange(num_imgs, device=info.device) * tokens_per_img + 5
-                protected_indices = (topk_idx + offsets[:, None]).flatten()
+                topk_per_img = []
+                num_patch_tokens = info.shape[-2] * info.shape[-1]
+                for img_idx in range(num_imgs):
+                    ratio_i = float(protect_ratios[img_idx].clamp(0.0, 1.0).item())
+                    aux_ratio_i = max(0.0, min(float(protect_aux_ratio), ratio_i))
+                    base_ratio_i = ratio_i - aux_ratio_i if aux_info is not None else ratio_i
+                    k_i = max(1, int(num_patch_tokens * base_ratio_i))
+                    info_i = info[img_idx:img_idx + 1].unsqueeze(1)
+                    if protect_nms:
+                        local_max = info_i == F.max_pool2d(info_i, kernel_size=3, stride=1, padding=1)
+                        candidate = info_i.masked_fill(~local_max, torch.finfo(info_i.dtype).min)
+                        valid_count = int(local_max.sum().item())
+                        if valid_count >= k_i:
+                            topk_idx = candidate.flatten().topk(k_i, dim=0).indices
+                        else:
+                            topk_idx = info_i.flatten().topk(k_i, dim=0).indices
+                    else:
+                        topk_idx = info_i.flatten().topk(k_i, dim=0).indices
+                    if aux_info is not None and aux_ratio_i > 0.0:
+                        k_aux = max(1, int(num_patch_tokens * aux_ratio_i))
+                        aux_i = aux_info[img_idx].flatten().clone()
+                        aux_i[topk_idx] = torch.finfo(aux_i.dtype).min
+                        aux_topk_idx = aux_i.topk(k_aux, dim=0).indices
+                        topk_idx = torch.cat([topk_idx, aux_topk_idx], dim=0)
+                    topk_per_img.append(topk_idx.unique() + img_idx * tokens_per_img + 5)
+
+                protected_indices = torch.cat(topk_per_img, dim=0)
                 num_protected = protected_indices.numel()
 
             else:
-                num_protected = int(N * 0.1)
+                ratio = float(protect_ratio) if not torch.is_tensor(protect_ratio) else float(protect_ratio.flatten()[0])
+                ratio = max(0.0, min(1.0, ratio))
+                num_protected = max(1, int(N * ratio))
                 step = max(1, N // num_protected)
                 protected_indices = torch.arange(0, N, step, device=metric.device)[
                     :num_protected

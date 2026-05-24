@@ -25,7 +25,13 @@ class VGGT(nn.Module, PyTorchModelHubMixin):
         self.depth_head = DPTHead(dim_in=2 * embed_dim, output_dim=2, activation="exp", conf_activation="expp1") if enable_depth else None
         self.track_head = TrackHead(dim_in=2 * embed_dim, patch_size=patch_size) if enable_track else None
 
-    def forward(self, images: torch.Tensor, query_points: torch.Tensor = None):
+    def forward(
+        self,
+        images: torch.Tensor,
+        query_points: torch.Tensor = None,
+        ga_depth: torch.Tensor = None,
+        return_ga_info_maps: bool = False,
+    ):
         """
         Forward pass of the VGGT model.
         Args:
@@ -59,7 +65,16 @@ class VGGT(nn.Module, PyTorchModelHubMixin):
         predictions = {}
 
         # FP8 제거 — A6000은 FP8 미지원, 일반 추론으로 대체
-        aggregated_tokens_list, patch_start_idx = self.aggregator(images)
+        aggregator_out = self.aggregator(
+            images,
+            ga_depth=ga_depth,
+            return_info_maps=return_ga_info_maps,
+        )
+
+        if return_ga_info_maps:
+            aggregated_tokens_list, patch_start_idx, ga_info_maps = aggregator_out
+        else:
+            aggregated_tokens_list, patch_start_idx = aggregator_out
 
         with torch.amp.autocast("cuda", enabled=True, dtype=torch.bfloat16):
             if self.camera_head is not None:
@@ -90,9 +105,50 @@ class VGGT(nn.Module, PyTorchModelHubMixin):
             predictions["conf"] = conf
 
         if not self.training:
-            predictions["images"] = images
+            predictions["images"] = images  # store the images for visualization during inference
+            if return_ga_info_maps:
+                predictions["ga_info_maps"] = ga_info_maps
+
+        elif return_ga_info_maps:
+            predictions["ga_info_maps"] = ga_info_maps
 
         return predictions
+
+    def set_ga_metric_weights(
+        self,
+        edge_weight: float = 0.7,
+        variance_weight: float = 0.3,
+        depth_boundary_weight: float = 0.0,
+        depth_map_is_boundary: bool = False,
+        interaction_weight: float = 0.0,
+        interaction_mode: str = "sqrt",
+        laplacian_weight: float = 0.0,
+        adaptive_weights: bool = False,
+        adaptive_protect_ratio: bool = False,
+        protect_base_ratio: float = 0.1,
+        protect_complexity_lambda: float = 0.0,
+        protect_min_ratio: float = 0.05,
+        protect_max_ratio: float = 0.2,
+        protect_nms: bool = False,
+        depth_protect_ratio: float = 0.0,
+    ):
+        self.aggregator.set_ga_metric_weights(
+            edge_weight=edge_weight,
+            variance_weight=variance_weight,
+            depth_boundary_weight=depth_boundary_weight,
+            depth_map_is_boundary=depth_map_is_boundary,
+            interaction_weight=interaction_weight,
+            interaction_mode=interaction_mode,
+            laplacian_weight=laplacian_weight,
+            adaptive_weights=adaptive_weights,
+            adaptive_protect_ratio=adaptive_protect_ratio,
+            protect_base_ratio=protect_base_ratio,
+            protect_complexity_lambda=protect_complexity_lambda,
+            protect_min_ratio=protect_min_ratio,
+            protect_max_ratio=protect_max_ratio,
+            protect_nms=protect_nms,
+            depth_protect_ratio=depth_protect_ratio,
+        )
 
     def update_patch_dimensions(self, patch_width: int, patch_height: int):
         """

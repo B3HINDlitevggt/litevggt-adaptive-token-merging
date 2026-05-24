@@ -6,6 +6,7 @@ import json
 import random
 import logging
 import warnings
+import cv2
 from vggt.models.vggt import VGGT
 from vggt.utils.rotation import mat_to_quat
 from vggt.utils.load_fn import load_and_preprocess_images
@@ -200,7 +201,96 @@ def setup_args():
     parser.add_argument('--dtu_dir', type=str, required=True, help='Path to tnt dir')
     parser.add_argument('--seed', type=int, default=0, help='Random seed for reproducibility')
     parser.add_argument('--model_path', type=str, required=True, help='Path to the VGGT model checkpoint')
+    parser.add_argument('--ga_depth_dir', type=str, default=None, help='Optional root dir of external depth maps for GA metric')
+    parser.add_argument('--ga_edge_weight', type=float, default=0.7, help='Weight for image edge score in GA metric')
+    parser.add_argument('--ga_variance_weight', type=float, default=0.3, help='Weight for patch variance score in GA metric')
+    parser.add_argument('--ga_depth_boundary_weight', type=float, default=0.0, help='Weight for depth boundary score in GA metric')
+    parser.add_argument('--ga_depth_map_is_boundary', action='store_true', help='Treat loaded GA depth maps as precomputed boundary maps')
+    parser.add_argument('--ga_interaction_weight', type=float, default=0.0, help='Weight for edge-variance interaction score in GA metric')
+    parser.add_argument('--ga_interaction_mode', choices=['sqrt', 'product'], default='sqrt', help='Interaction score mode for GA metric')
+    parser.add_argument('--ga_laplacian_weight', type=float, default=0.0, help='Weight for image Laplacian proxy score in GA metric')
+    parser.add_argument('--ga_adaptive_weights', action='store_true', help='Adapt edge/variance weights from frame-level map means')
+    parser.add_argument('--ga_adaptive_protect_ratio', action='store_true', help='Adapt protected GA token ratio from frame complexity')
+    parser.add_argument('--ga_protect_base_ratio', type=float, default=0.1, help='Base protected token ratio for GA')
+    parser.add_argument('--ga_protect_complexity_lambda', type=float, default=0.0, help='Complexity scale for adaptive protected token ratio')
+    parser.add_argument('--ga_protect_min_ratio', type=float, default=0.05, help='Minimum protected token ratio when adaptive protection is enabled')
+    parser.add_argument('--ga_protect_max_ratio', type=float, default=0.2, help='Maximum protected token ratio when adaptive protection is enabled')
+    parser.add_argument('--ga_protect_nms', action='store_true', help='Select protected GA tokens from local maxima in the info map')
+    parser.add_argument('--ga_depth_protect_ratio', type=float, default=0.0, help='Absolute protected token ratio reserved for depth boundary top-k')
     return parser.parse_args()
+
+
+def find_depth_file(depth_scene_dir, image_name):
+    stem = os.path.splitext(image_name)[0]
+    candidate_names = [
+        f"{stem}.npy",
+        f"{stem}.npz",
+        f"{stem}.png",
+        f"{stem}.jpg",
+        f"{stem}.jpeg",
+        f"{stem}.tif",
+        f"{stem}.tiff",
+        f"{stem}_depth.npy",
+        f"{stem}_depth.npz",
+        f"{stem}_depth.png",
+        f"{stem}_depth.jpg",
+        f"{stem}_depth.jpeg",
+        f"{stem}_depth.tif",
+        f"{stem}_depth.tiff",
+    ]
+
+    for candidate_name in candidate_names:
+        candidate_path = os.path.join(depth_scene_dir, candidate_name)
+        if os.path.isfile(candidate_path):
+            return candidate_path
+
+    return None
+
+
+def load_depth_file(depth_path):
+    if depth_path.endswith(".npy"):
+        depth = np.load(depth_path)
+    elif depth_path.endswith(".npz"):
+        depth_npz = np.load(depth_path)
+        if "depth" in depth_npz:
+            depth = depth_npz["depth"]
+        else:
+            first_key = list(depth_npz.keys())[0]
+            depth = depth_npz[first_key]
+    else:
+        depth = cv2.imread(depth_path, cv2.IMREAD_UNCHANGED)
+
+    depth = np.asarray(depth, dtype=np.float32)
+    if depth.ndim == 3:
+        depth = depth[..., 0]
+    depth = np.nan_to_num(depth, nan=0.0, posinf=0.0, neginf=0.0)
+    return depth
+
+
+def build_ga_depth_tensor(ga_depth_dir, scene, image_paths, target_hw):
+    if ga_depth_dir is None:
+        return None
+
+    depth_scene_dir = os.path.join(ga_depth_dir, scene)
+    if not os.path.isdir(depth_scene_dir):
+        raise FileNotFoundError(f"GA depth scene directory not found: {depth_scene_dir}")
+
+    target_h, target_w = target_hw
+    depth_tensors = []
+    for image_path in image_paths:
+        image_name = os.path.basename(image_path)
+        depth_path = find_depth_file(depth_scene_dir, image_name)
+        if depth_path is None:
+            raise FileNotFoundError(
+                f"No GA depth file found for image '{image_name}' under {depth_scene_dir}"
+            )
+
+        depth = load_depth_file(depth_path)
+        if depth.shape != (target_h, target_w):
+            depth = cv2.resize(depth, (target_w, target_h), interpolation=cv2.INTER_NEAREST)
+        depth_tensors.append(torch.from_numpy(depth))
+
+    return torch.stack(depth_tensors, dim=0)
 
 
 def load_model(device, model_path):
@@ -342,6 +432,23 @@ def main():
 
     # Load model
     model = load_model(device, model_path=args.model_path)
+    model.set_ga_metric_weights(
+        edge_weight=args.ga_edge_weight,
+        variance_weight=args.ga_variance_weight,
+        depth_boundary_weight=args.ga_depth_boundary_weight,
+        depth_map_is_boundary=args.ga_depth_map_is_boundary,
+        interaction_weight=args.ga_interaction_weight,
+        interaction_mode=args.ga_interaction_mode,
+        laplacian_weight=args.ga_laplacian_weight,
+        adaptive_weights=args.ga_adaptive_weights,
+        adaptive_protect_ratio=args.ga_adaptive_protect_ratio,
+        protect_base_ratio=args.ga_protect_base_ratio,
+        protect_complexity_lambda=args.ga_protect_complexity_lambda,
+        protect_min_ratio=args.ga_protect_min_ratio,
+        protect_max_ratio=args.ga_protect_max_ratio,
+        protect_nms=args.ga_protect_nms,
+        depth_protect_ratio=args.ga_depth_protect_ratio,
+    )
 
     # Set random seeds
     set_random_seeds(args.seed)
@@ -361,9 +468,11 @@ def main():
         # B 3 H W 0-1
         images = sample["imgs"].to(device)
         c2w_gt = sample["poses"].to(device)
+        image_paths = sample["image_paths"]
         max_frames = 48
         images = images[:max_frames]
         c2w_gt = c2w_gt[:max_frames]
+        image_paths = image_paths[:max_frames]
         N_aligned = images.shape[0]
 
         print(f"✅ images: {images.shape}, poses: {c2w_gt.shape}")
@@ -378,6 +487,15 @@ def main():
         patch_height = images.shape[-2] // 14
         model.update_patch_dimensions(patch_width, patch_height)
 
+        ga_depth = build_ga_depth_tensor(
+            args.ga_depth_dir,
+            category,
+            image_paths,
+            target_hw=images.shape[-2:],
+        )
+        if ga_depth is not None:
+            ga_depth = ga_depth.unsqueeze(0).to(device)
+
         with torch.no_grad():
             fp8_format=Format.E4M3
             fp8_recipe = DelayedScaling(
@@ -386,7 +504,7 @@ def main():
                 amax_compute_algo="max",
             )
             with te.fp8_autocast(enabled=True, fp8_recipe=fp8_recipe):
-                predictions = model(images)
+                predictions = model(images, ga_depth=ga_depth)
 
             with torch.amp.autocast("cuda",dtype=torch.float64):
                 extrinsic, intrinsic = pose_encoding_to_extri_intri(predictions["pose_enc"], images.shape[-2:])

@@ -669,7 +669,8 @@ class DTUDataset(Dataset):
         return dict(
             imgs=colors,
             poses=poses,
-            scene=scene
+            scene=scene,
+            image_paths=image_paths,
         )
 
 

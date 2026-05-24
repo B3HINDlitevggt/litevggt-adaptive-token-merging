@@ -96,13 +96,17 @@ class Block(nn.Module):
         pos=None,
         global_merging=False,
         info_map=None,
+        protect_ratio=0.1,
+        protect_nms=False,
+        protect_aux_map=None,
+        protect_aux_ratio=0.0,
         cal_merge=False,
         m_u=None,
         use_dynamic_protect: bool = False,  # Exp 2: GA Token 비율 동적
         use_dynamic_grid: bool = False,     # Exp 3: Grid stride 동적
-        use_sttm: bool = False,             # Exp 5: STTM merge ← 새로 추가
-        sttm_spatial_thresh: float = 0.8,  # STTM 공간 merge 임계값
-        sttm_temporal_thresh: float = 0.6, # STTM 시간 merge 임계값
+        use_sttm: bool = False,             # Exp 5: STTM merge
+        sttm_spatial_thresh: float = 0.8,
+        sttm_temporal_thresh: float = 0.6,
         verbose: bool = True,
     ):
         x_norm = self.norm1(x)
@@ -177,8 +181,6 @@ class Block(nn.Module):
                     # Step 1: protect_ratio 결정
                     if use_dynamic_protect and info_map is not None:
                         protect_ratio = None
-                    else:
-                        protect_ratio = 0.1
 
                     # Step 2: grid stride 결정
                     if use_dynamic_grid and info_map is not None:
@@ -202,9 +204,11 @@ class Block(nn.Module):
                         info_map=info_map,
                         use_dynamic_protect=use_dynamic_protect,
                         protect_ratio=protect_ratio if protect_ratio is not None else 0.1,
+                        protect_nms=protect_nms,
+                        protect_aux_map=protect_aux_map,
+                        protect_aux_ratio=protect_aux_ratio,
                         verbose=verbose,
                     )
-
             m_u = (m, u)
 
         att_out = self.attn(x_norm, pos=pos, global_merging=global_merging, m_u=m_u)

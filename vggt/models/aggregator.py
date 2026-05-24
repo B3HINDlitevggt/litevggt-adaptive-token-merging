@@ -108,17 +108,34 @@ class Aggregator(nn.Module):
         self.cal_layer      = [0, 6, 15, 20]
         self.m_u            = None
 
+        self.use_info = True
+        self.ga_edge_weight = 0.7
+        self.ga_variance_weight = 0.3
+        self.ga_depth_boundary_weight = 0.0
+        self.ga_depth_map_is_boundary = False
+        self.ga_interaction_weight = 0.0
+        self.ga_interaction_mode = "sqrt"
+        self.ga_laplacian_weight = 0.0
+        self.ga_adaptive_weights = False
+        self.ga_adaptive_protect_ratio = False
+        self.ga_protect_base_ratio = 0.1
+        self.ga_protect_complexity_lambda = 0.0
+        self.ga_protect_min_ratio = 0.05
+        self.ga_protect_max_ratio = 0.2
+        self.ga_protect_nms = False
+        self.ga_depth_protect_ratio = 0.0
+
         # ========================================
         # 동적 모드 플래그
         # use_dynamic_protect: Exp 2 - GA Token 비율 동적
         # use_dynamic_grid:    Exp 3 - Grid stride 동적
-        # use_sttm:            Exp 5 - STTM 공간+시간 merge ← 새로 추가
+        # use_sttm:            Exp 5 - STTM 공간+시간 merge
         # ========================================
         self.use_dynamic_protect  = False
         self.use_dynamic_grid     = False
-        self.use_sttm             = False   # ← 새로 추가
-        self.sttm_spatial_thresh  = 0.8     # STTM 공간 merge 임계값
-        self.sttm_temporal_thresh = 0.6     # STTM 시간 merge 임계값
+        self.use_sttm             = False
+        self.sttm_spatial_thresh  = 0.8
+        self.sttm_temporal_thresh = 0.6
         self.verbose_protect      = True
 
         # DINOv2 / Frame Attention 청크 처리
@@ -176,7 +193,22 @@ class Aggregator(nn.Module):
             all_tokens.append(t)
         return torch.cat(all_tokens, dim=0)
 
-    def forward(self, images: torch.Tensor) -> Tuple[List[torch.Tensor], int]:
+    def forward(
+        self,
+        images: torch.Tensor,
+        ga_depth: Optional[torch.Tensor] = None,
+        return_info_maps: bool = False,
+    ) -> Union[Tuple[List[torch.Tensor], int], Tuple[List[torch.Tensor], int, Dict[str, torch.Tensor]]]:
+        """
+        Args:
+            images (torch.Tensor): Input images with shape [B, S, 3, H, W], in range [0, 1].
+                B: batch size, S: sequence length, 3: RGB channels, H: height, W: width
+
+        Returns:
+            (list[torch.Tensor], int):
+                The list of outputs from the attention blocks,
+                and the patch_start_idx indicating where patch tokens begin.
+        """
         B, S, C_in, H, W = images.shape
 
         if C_in != 3:
@@ -218,8 +250,43 @@ class Aggregator(nn.Module):
 
         # Step 2: GA Map 계산 (STTM 모드에서는 사용 안 하지만 유지)
         info_map = None
+        protect_ratio = self.ga_protect_base_ratio
+        protect_aux_map = None
+        info_maps = {}
         if self.global_merging and self.use_info and not self.use_sttm:
-            info_map = compute_info_maps(images, patch_tokens)["info_map"]
+            if ga_depth is not None:
+                if ga_depth.dim() == 4:
+                    ga_depth = ga_depth.unsqueeze(2)
+                if ga_depth.dim() != 5:
+                    raise ValueError(
+                        f"Expected ga_depth to have shape [B, S, H, W] or [B, S, 1, H, W], got {tuple(ga_depth.shape)}"
+                    )
+                ga_depth = ga_depth.view(B * S, ga_depth.shape[2], ga_depth.shape[3], ga_depth.shape[4])
+
+            info_maps = compute_info_maps(
+                images,
+                patch_tokens,
+                depth_map=ga_depth,
+                depth_map_is_boundary=self.ga_depth_map_is_boundary,
+                edge_weight=self.ga_edge_weight,
+                variance_weight=self.ga_variance_weight,
+                depth_boundary_weight=self.ga_depth_boundary_weight,
+                interaction_weight=self.ga_interaction_weight,
+                interaction_mode=self.ga_interaction_mode,
+                laplacian_weight=self.ga_laplacian_weight,
+                adaptive_weights=self.ga_adaptive_weights,
+                adaptive_protect_ratio=self.ga_adaptive_protect_ratio,
+                protect_base_ratio=self.ga_protect_base_ratio,
+                protect_complexity_lambda=self.ga_protect_complexity_lambda,
+                protect_min_ratio=self.ga_protect_min_ratio,
+                protect_max_ratio=self.ga_protect_max_ratio,
+            )
+            if self.ga_depth_protect_ratio > 0.0:
+                info_map = info_maps["base_info_map"]
+                protect_aux_map = info_maps["depth_info_map"]
+            else:
+                info_map = info_maps["info_map"]
+            protect_ratio = info_maps["protect_ratio"]
 
         # Step 3: 특수 토큰 붙이기
         camera_token   = slice_expand_and_flatten(self.camera_token, B, S)
@@ -247,7 +314,18 @@ class Aggregator(nn.Module):
                     )
                 elif attn_type == "global":
                     tokens, global_idx = self._process_global_attention(
-                        tokens, B, S, P, C, global_idx, pos=pos_to_use, info_map=info_map
+                        tokens,
+                        B,
+                        S,
+                        P,
+                        C,
+                        global_idx,
+                        pos=pos_to_use,
+                        info_map=info_map,
+                        protect_ratio=protect_ratio,
+                        protect_nms=self.ga_protect_nms,
+                        protect_aux_map=protect_aux_map,
+                        protect_aux_ratio=self.ga_depth_protect_ratio,
                     )
                 else:
                     raise ValueError(f"Unknown attention type: {attn_type}")
@@ -263,7 +341,44 @@ class Aggregator(nn.Module):
         if info_map is not None:
             del info_map
 
+        if return_info_maps:
+            return output_list, self.patch_start_idx, info_maps
+
         return output_list, self.patch_start_idx
+
+    def set_ga_metric_weights(
+        self,
+        edge_weight: float = 0.7,
+        variance_weight: float = 0.3,
+        depth_boundary_weight: float = 0.0,
+        depth_map_is_boundary: bool = False,
+        interaction_weight: float = 0.0,
+        interaction_mode: str = "sqrt",
+        laplacian_weight: float = 0.0,
+        adaptive_weights: bool = False,
+        adaptive_protect_ratio: bool = False,
+        protect_base_ratio: float = 0.1,
+        protect_complexity_lambda: float = 0.0,
+        protect_min_ratio: float = 0.05,
+        protect_max_ratio: float = 0.2,
+        protect_nms: bool = False,
+        depth_protect_ratio: float = 0.0,
+    ):
+        self.ga_edge_weight = edge_weight
+        self.ga_variance_weight = variance_weight
+        self.ga_depth_boundary_weight = depth_boundary_weight
+        self.ga_depth_map_is_boundary = depth_map_is_boundary
+        self.ga_interaction_weight = interaction_weight
+        self.ga_interaction_mode = interaction_mode
+        self.ga_laplacian_weight = laplacian_weight
+        self.ga_adaptive_weights = adaptive_weights
+        self.ga_adaptive_protect_ratio = adaptive_protect_ratio
+        self.ga_protect_base_ratio = protect_base_ratio
+        self.ga_protect_complexity_lambda = protect_complexity_lambda
+        self.ga_protect_min_ratio = protect_min_ratio
+        self.ga_protect_max_ratio = protect_max_ratio
+        self.ga_protect_nms = protect_nms
+        self.ga_depth_protect_ratio = depth_protect_ratio
 
     def _process_frame_attention(self, tokens, B, S, P, C, frame_idx, pos=None):
         """Frame Attention 청크 처리 → Frame Attention MLP OOM 방지"""
@@ -300,8 +415,24 @@ class Aggregator(nn.Module):
         intermediates = tokens
         return tokens, frame_idx, intermediates
 
-    def _process_global_attention(self, tokens, B, S, P, C, global_idx, pos=None, info_map=None):
-        """Global Attention + merge (기존 방식 or STTM)"""
+    def _process_global_attention(
+        self,
+        tokens,
+        B,
+        S,
+        P,
+        C,
+        global_idx,
+        pos=None,
+        info_map=None,
+        protect_ratio=0.1,
+        protect_nms=False,
+        protect_aux_map=None,
+        protect_aux_ratio=0.0,
+    ):
+        """
+        Process global attention blocks. We keep tokens in shape (B, S*P, C).
+        """
         if tokens.shape != (B, S * P, C):
             tokens = tokens.view(B, S, P, C).view(B, S * P, C)
         if pos is not None and pos.shape != (B, S * P, 2):
@@ -312,25 +443,36 @@ class Aggregator(nn.Module):
 
         if self.training:
             tokens, m_u = checkpoint(
-                self.global_blocks[global_idx], tokens, pos,
-                global_merging=self.global_merging,
-                info_map=info_map,
-                cal_merge=cal_merge,
-                m_u=self.m_u,
-                use_reentrant=self.use_reentrant
+                self.global_blocks[global_idx],
+                tokens,
+                pos,
+                self.global_merging,
+                info_map,
+                protect_ratio,
+                protect_nms,
+                protect_aux_map,
+                protect_aux_ratio,
+                cal_merge,
+                self.m_u,
+                use_reentrant=self.use_reentrant,
             )
         else:
             tokens, m_u = self.global_blocks[global_idx](
-                tokens, pos=pos,
+                tokens,
+                pos=pos,
                 global_merging=self.global_merging,
                 info_map=info_map,
+                protect_ratio=protect_ratio,
+                protect_nms=protect_nms,
+                protect_aux_map=protect_aux_map,
+                protect_aux_ratio=protect_aux_ratio,
                 cal_merge=cal_merge,
                 m_u=self.m_u,
                 use_dynamic_protect=self.use_dynamic_protect,
                 use_dynamic_grid=self.use_dynamic_grid,
-                use_sttm=self.use_sttm,                          # ← 새로 추가
-                sttm_spatial_thresh=self.sttm_spatial_thresh,    # ← 새로 추가
-                sttm_temporal_thresh=self.sttm_temporal_thresh,  # ← 새로 추가
+                use_sttm=self.use_sttm,
+                sttm_spatial_thresh=self.sttm_spatial_thresh,
+                sttm_temporal_thresh=self.sttm_temporal_thresh,
                 verbose=verbose,
             )
 
