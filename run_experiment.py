@@ -8,6 +8,10 @@ LiteVGGT Dynamic Token Merging 실험 스크립트
   dynamic_all      : 둘 다 동시 적용           (Exp 4)
   sttm             : STTM 공간+시간 merge      (Exp 5)
 
+[Frame Selection]
+  aggregator_cls.py : CLS 토큰 유사도 기반 프레임 선택
+  aggregator_sobel.py : Sobel 기반 프레임 선택
+
 [실행 예시]
   GT_PATH="./SampleSet/MVS Data/Points/stl/stl001_total.ply"
 
@@ -293,7 +297,8 @@ def main(args):
     # 추론
     t_start = time.time()
     with torch.no_grad():
-        aggregated_tokens_list, patch_start_idx = model.aggregator(images)
+        aggregator_out = model.aggregator(images)
+        aggregated_tokens_list, patch_start_idx = aggregator_out[0], aggregator_out[1]
 
         with torch.amp.autocast("cuda", enabled=True, dtype=dtype):
             pose_enc = model.camera_head(aggregated_tokens_list)[-1]

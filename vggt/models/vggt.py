@@ -4,11 +4,16 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 
+import os
 import torch
 import torch.nn as nn
 from huggingface_hub import PyTorchModelHubMixin  # used for model hub
 
-from vggt.models.aggregator import Aggregator
+_AGGREGATOR_MODE = os.environ.get("VGGT_AGGREGATOR", "sobel").lower()
+if _AGGREGATOR_MODE == "cls":
+    from vggt.models.aggregator_cls import Aggregator
+else:
+    from vggt.models.aggregator_sobel import Aggregator
 from vggt.heads.camera_head import CameraHead
 from vggt.heads.dpt_head import DPTHead
 from vggt.heads.track_head import TrackHead
@@ -59,7 +64,8 @@ class VGGT(nn.Module, PyTorchModelHubMixin):
         predictions = {}
 
         # FP8 제거 — A6000은 FP8 미지원, 일반 추론으로 대체
-        aggregated_tokens_list, patch_start_idx = self.aggregator(images)
+        aggregator_out = self.aggregator(images)
+        aggregated_tokens_list, patch_start_idx = aggregator_out[0], aggregator_out[1]
 
         with torch.amp.autocast("cuda", enabled=True, dtype=torch.bfloat16):
             if self.camera_head is not None:
