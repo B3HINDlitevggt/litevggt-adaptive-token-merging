@@ -19,8 +19,6 @@ import argparse
 logging.getLogger("dinov2").setLevel(logging.WARNING)
 warnings.filterwarnings("ignore", message="xFormers is available")
 warnings.filterwarnings("ignore", message="dinov2")
-import transformer_engine.pytorch as te
-from transformer_engine.common.recipe import Format, DelayedScaling
 
 # Set computation precision
 torch.set_float32_matmul_precision('highest')
@@ -390,14 +388,7 @@ def process_sequence(model, seq_name, seq_data, category, co3d_dir, min_num_imag
     model.update_patch_dimensions(patch_width, patch_height)
 
     with torch.no_grad():
-        fp8_format=Format.E4M3
-        fp8_recipe = DelayedScaling(
-            fp8_format=fp8_format,
-            amax_history_len=80,
-            amax_compute_algo="max",
-        )
-        with te.fp8_autocast(enabled=True, fp8_recipe=fp8_recipe):
-            predictions = model(images)
+        predictions = model(images)
 
     with torch.amp.autocast("cuda",dtype=torch.float64):
         extrinsic, intrinsic = pose_encoding_to_extri_intri(predictions["pose_enc"], images.shape[-2:])
@@ -497,14 +488,7 @@ def main():
             ga_depth = ga_depth.unsqueeze(0).to(device)
 
         with torch.no_grad():
-            fp8_format=Format.E4M3
-            fp8_recipe = DelayedScaling(
-                fp8_format=fp8_format,
-                amax_history_len=80,
-                amax_compute_algo="max",
-            )
-            with te.fp8_autocast(enabled=True, fp8_recipe=fp8_recipe):
-                predictions = model(images, ga_depth=ga_depth)
+            predictions = model(images, ga_depth=ga_depth)
 
             with torch.amp.autocast("cuda",dtype=torch.float64):
                 extrinsic, intrinsic = pose_encoding_to_extri_intri(predictions["pose_enc"], images.shape[-2:])
