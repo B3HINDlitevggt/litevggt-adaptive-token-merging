@@ -35,7 +35,7 @@ for seed in $SEEDS; do
     fi
 
     read -r auc30 auc15 auc5 auc3 < <(
-      python - "$mean_line" <<'PY'
+      python3 - "$mean_line" <<'PY'
 import re
 import sys
 
@@ -58,7 +58,7 @@ PY
   fi
 done
 
-python - "$SUMMARY_TSV" <<'PY' | tee -a "$SUMMARY_TXT"
+python3 - "$SUMMARY_TSV" <<'PY' | tee -a "$SUMMARY_TXT"
 import csv
 import statistics
 import sys
