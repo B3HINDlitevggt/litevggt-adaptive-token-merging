@@ -38,7 +38,7 @@ images
   -> camera/depth/point heads
 ```
 
-This branch extends the global attention token merging stage with three
+This branch extends the global attention token merging stage with four
 independent option groups.
 
 ### 1. Depth-Aware GA Token Protection
@@ -159,6 +159,73 @@ Current default scheduler parameters:
 tau_base = 0.25
 k_max = 6
 use_layer_wise_tau = False
+```
+
+### 4. Quadtree-Bipartite Token Merging
+
+Files:
+
+- `merging/sttm_bipartite_merge.py`
+- `vggt/layers/block.py`
+- `vggt/models/aggregator.py`
+- `run_experiment.py`
+- `run.sh`
+
+Method:
+
+```text
+patch features
+  -> recursively split spatial regions with a quadtree rule
+  -> use region-level similarity to choose variable-size merge regions
+  -> run bipartite token merging with GA protection inside the selected layout
+```
+
+This mode is controlled on the model side by:
+
+```python
+model.aggregator.use_quadtree_bipartite = True
+model.aggregator.qt_spatial_thresh = 0.85
+model.aggregator.qt_root_block_size = 8
+model.aggregator.qt_min_block_size = 2
+```
+
+The updated `run_experiment.py` exposes this as:
+
+```bash
+python3 run_experiment.py \
+  --img_dir /path/to/images \
+  --output_dir ./output/qt_bipartite \
+  --gt_path /path/to/gt.ply \
+  --mode quadtree_bipartite \
+  --qt_spatial_thresh 0.85 \
+  --qt_root_block_size 8 \
+  --qt_min_block_size 2 \
+  --cal_layer_mode 4
+```
+
+`--cal_layer_mode` controls how often merge indices are recomputed:
+
+```text
+4 -> [0, 6, 15, 20]
+3 -> [0, 8, 16]
+2 -> [0, 12]
+1 -> [0]
+```
+
+`run.sh` is a convenience sweep for quadtree-bipartite experiments over:
+
+```text
+frame count
+cal_layer_mode
+qt_spatial_thresh
+```
+
+Edit the paths at the top of `run.sh` before running it:
+
+```bash
+GT_PATH="./data_scannet_01/scene0001_00_vh_clean.ply"
+IMG_DIR="./data_scannet_01/images"
+GPU_ID=3
 ```
 
 ## Default DTU Evaluation
@@ -333,6 +400,43 @@ dynamic_all
 sttm
 ```
 
+## Quadtree-Bipartite Experiments
+
+The latest `main` branch adds a quadtree-bipartite merge mode to
+`run_experiment.py`.
+
+Single run:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python3 run_experiment.py \
+  --img_dir /path/to/images \
+  --output_dir ./output/qt_bipartite_t085_cal4 \
+  --gt_path /path/to/gt.ply \
+  --mode quadtree_bipartite \
+  --qt_spatial_thresh 0.85 \
+  --qt_root_block_size 8 \
+  --qt_min_block_size 2 \
+  --cal_layer_mode 4 \
+  --baseline_dir ./output/baseline
+```
+
+Automatic sweep:
+
+```bash
+bash run.sh
+```
+
+Before using `run.sh`, edit:
+
+```text
+GT_PATH
+IMG_DIR
+GPU_ID
+FRAMES_LIST
+CAL_LAYER_MODES
+QT_THRESHES
+```
+
 ## Option Summary
 
 Environment variables:
@@ -368,6 +472,26 @@ Python-only option:
 model(images, use_adaptive_cache=True)
 ```
 
+`run_experiment.py` options:
+
+```text
+--mode
+  baseline
+  dynamic_protect
+  dynamic_grid
+  dynamic_all
+  sttm
+  quadtree_bipartite
+
+--cal_layer_mode
+  4, 3, 2, or 1
+
+--qt_spatial_thresh
+--qt_root_block_size
+--qt_min_block_size
+  quadtree-bipartite controls
+```
+
 ## Reproducibility Notes
 
 - For the main depth-aware result, keep `GA_DEPTH_PROTECT_RATIO=0.0`.
@@ -376,5 +500,8 @@ model(images, use_adaptive_cache=True)
   not use the default depth-aware GA path.
 - Adaptive cache is off by default and should be evaluated separately because
   it changes merge-index reuse across layers.
+- Quadtree-bipartite is also off by default. It is enabled by
+  `--mode quadtree_bipartite` in `run_experiment.py`, or by setting
+  `model.aggregator.use_quadtree_bipartite=True`.
 - Do not commit generated files such as `logs/`, `outputs/`, `qual_*`,
   `__pycache__/`, `.DS_Store`, checkpoints, or downloaded datasets.
