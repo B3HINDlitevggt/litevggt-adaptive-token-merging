@@ -678,4 +678,5 @@ def token_merge_bipartite2d(
 
         return out
 
+    merge.b_idx = b_idx
     return merge, unmerge

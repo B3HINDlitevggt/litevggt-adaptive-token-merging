@@ -23,6 +23,7 @@ from vggt.layers.vision_transformer import vit_small, vit_base, vit_large, vit_g
 
 from merging.merge import compute_info_maps
 from merging.complexity import reset_frame_counter
+from vggt.merging.adaptive_cache import AdaptiveCacheScheduler
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +125,12 @@ class Aggregator(nn.Module):
         self.ga_protect_max_ratio = 0.2
         self.ga_protect_nms = False
         self.ga_depth_protect_ratio = 0.0
+        self.adaptive_cache = AdaptiveCacheScheduler(
+            num_layers=self.depth,
+            tau_base=0.25,
+            k_max=6,
+            use_layer_wise_tau=False,
+        )
 
         # ========================================
         # 동적 모드 플래그
@@ -198,6 +205,7 @@ class Aggregator(nn.Module):
         images: torch.Tensor,
         ga_depth: Optional[torch.Tensor] = None,
         return_info_maps: bool = False,
+        use_adaptive_cache: bool = False,
     ) -> Union[Tuple[List[torch.Tensor], int], Tuple[List[torch.Tensor], int, Dict[str, torch.Tensor]]]:
         """
         Args:
@@ -305,6 +313,8 @@ class Aggregator(nn.Module):
         global_idx = 0
         output_list = []
         pos_to_use = pos
+        if use_adaptive_cache:
+            self.adaptive_cache.reset()
 
         for block_idx in range(self.aa_block_num):
             for attn_type in self.aa_order:
@@ -326,6 +336,7 @@ class Aggregator(nn.Module):
                         protect_nms=self.ga_protect_nms,
                         protect_aux_map=protect_aux_map,
                         protect_aux_ratio=self.ga_depth_protect_ratio,
+                        use_adaptive_cache=use_adaptive_cache,
                     )
                 else:
                     raise ValueError(f"Unknown attention type: {attn_type}")
@@ -429,6 +440,7 @@ class Aggregator(nn.Module):
         protect_nms=False,
         protect_aux_map=None,
         protect_aux_ratio=0.0,
+        use_adaptive_cache=False,
     ):
         """
         Process global attention blocks. We keep tokens in shape (B, S*P, C).
@@ -438,7 +450,17 @@ class Aggregator(nn.Module):
         if pos is not None and pos.shape != (B, S * P, 2):
             pos = pos.view(B, S, P, 2).view(B, S * P, 2)
 
-        cal_merge = global_idx in self.cal_layer
+        if use_adaptive_cache and not self.use_sttm:
+            if self.m_u is not None and len(self.m_u) > 2:
+                b_idx_cached = self.m_u[2]
+            else:
+                b_idx_cached = None
+            recompute, _ = self.adaptive_cache.should_recompute(
+                global_idx, tokens, b_idx_cached
+            )
+            cal_merge = recompute
+        else:
+            cal_merge = global_idx in self.cal_layer
         verbose   = self.verbose_protect and (global_idx == self.cal_layer[0])
 
         if self.training:
@@ -477,6 +499,15 @@ class Aggregator(nn.Module):
             )
 
         self.m_u = m_u
+
+        if use_adaptive_cache and not self.use_sttm:
+            if cal_merge:
+                b_idx_new = m_u[2] if m_u is not None and len(m_u) > 2 else None
+                self.adaptive_cache.update_cache(global_idx, m_u, tokens, b_idx_new)
+            else:
+                cached_m_u = self.adaptive_cache.get_m_u(global_idx)
+                if cached_m_u is not None:
+                    self.m_u = cached_m_u
 
         # STTM 실제 토큰 수 저장 (cal_layer에서 새로 계산된 경우)
         if self.use_sttm:

@@ -209,7 +209,7 @@ class Block(nn.Module):
                         protect_aux_ratio=protect_aux_ratio,
                         verbose=verbose,
                     )
-            m_u = (m, u)
+            m_u = (m, u, getattr(m, "b_idx", None))
 
         att_out = self.attn(x_norm, pos=pos, global_merging=global_merging, m_u=m_u)
         x = x + self.ls1(att_out)

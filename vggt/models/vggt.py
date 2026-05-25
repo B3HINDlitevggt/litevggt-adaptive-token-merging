@@ -4,11 +4,18 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 
+import os
 import torch
 import torch.nn as nn
 from huggingface_hub import PyTorchModelHubMixin  # used for model hub
 
-from vggt.models.aggregator import Aggregator
+_AGGREGATOR_MODE = os.environ.get("VGGT_AGGREGATOR", "default").lower()
+if _AGGREGATOR_MODE == "sobel":
+    from vggt.models.aggregator_sobel import Aggregator
+elif _AGGREGATOR_MODE == "cls":
+    from vggt.models.aggregator_cls import Aggregator
+else:
+    from vggt.models.aggregator import Aggregator
 from vggt.heads.camera_head import CameraHead
 from vggt.heads.dpt_head import DPTHead
 from vggt.heads.track_head import TrackHead
@@ -31,6 +38,7 @@ class VGGT(nn.Module, PyTorchModelHubMixin):
         query_points: torch.Tensor = None,
         ga_depth: torch.Tensor = None,
         return_ga_info_maps: bool = False,
+        use_adaptive_cache: bool = False,
     ):
         """
         Forward pass of the VGGT model.
@@ -65,11 +73,15 @@ class VGGT(nn.Module, PyTorchModelHubMixin):
         predictions = {}
 
         # FP8 제거 — A6000은 FP8 미지원, 일반 추론으로 대체
-        aggregator_out = self.aggregator(
-            images,
-            ga_depth=ga_depth,
-            return_info_maps=return_ga_info_maps,
-        )
+        if _AGGREGATOR_MODE in {"sobel", "cls"}:
+            aggregator_out = self.aggregator(images)
+        else:
+            aggregator_out = self.aggregator(
+                images,
+                ga_depth=ga_depth,
+                return_info_maps=return_ga_info_maps,
+                use_adaptive_cache=use_adaptive_cache,
+            )
 
         if return_ga_info_maps:
             aggregated_tokens_list, patch_start_idx, ga_info_maps = aggregator_out
@@ -132,6 +144,8 @@ class VGGT(nn.Module, PyTorchModelHubMixin):
         protect_nms: bool = False,
         depth_protect_ratio: float = 0.0,
     ):
+        if not hasattr(self.aggregator, "set_ga_metric_weights"):
+            return
         self.aggregator.set_ga_metric_weights(
             edge_weight=edge_weight,
             variance_weight=variance_weight,
