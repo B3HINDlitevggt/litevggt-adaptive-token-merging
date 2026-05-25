@@ -449,7 +449,7 @@ class TnTDataset(Dataset):
 
 
 
-def read_images_bin(bin_path: str | Path):
+def read_images_bin(bin_path):
     bin_path = Path(bin_path)
     poses = {}
 
@@ -555,7 +555,7 @@ class Mip360Dataset(Dataset):
         )
 
 
-def read_images_bin(bin_path: str | Path):
+def read_images_bin(bin_path):
     bin_path = Path(bin_path)
     poses = {}
 
