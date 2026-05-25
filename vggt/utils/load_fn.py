@@ -320,10 +320,12 @@ def load_image_file_crop(img_path: str, ratio=1.0, target_size=518):
         if np.issubdtype(img.dtype, np.integer):
             img = img.astype(np.float32) / np.iinfo(img.dtype).max  # normalize
 
+        height, width = img.shape[:2]
+
         # Apply ratio scaling if needed
         if ratio != 1.0:
-            height, width = img.shape[:2]
             img = cv2.resize(img, (int(width * ratio), int(height * ratio)), interpolation=cv2.INTER_AREA)
+            height, width = img.shape[:2]
 
         # Convert single channel grayscale image to 3 channels
         if img.ndim == 2:  # for grayscale images
