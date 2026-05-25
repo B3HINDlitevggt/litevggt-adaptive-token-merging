@@ -3,9 +3,9 @@
 
 ### 1. __init__        → 레이어/설정값 세팅
 ### 2. __build_patch_embed__ → DINOv2 인코더 생성
-### 3. _encode_patches_chunked → [추가] DINOv2 청크 인코딩
+### 3. _encode_patches_chunked → DINOv2 청크 인코딩
 ### 4. forward         → 실제 추론 메인 함수
-### 5. _process_frame_attention  → [수정] 청크 처리
+### 5. _process_frame_attention  → Frame Attention 청크 처리
 ### 6. _process_global_attention → merge + attention
 ### 7. slice_expand_and_flatten  → 특수 토큰 확장 유틸
 
@@ -106,7 +106,7 @@ class Aggregator(nn.Module):
 
         self.global_merging = True
         self.use_info       = True
-        self.cal_layer      = [0, 6, 15, 20]
+        self.cal_layer      = [0, 6, 15, 20]   # 기본: 4번 재계산. run_experiment에서 덮어쓸 수 있음
         self.m_u            = None
 
         self.use_info = True
@@ -132,17 +132,26 @@ class Aggregator(nn.Module):
             use_layer_wise_tau=False,
         )
 
+        # 모드별 플래그
+        # use_dynamic_protect    : GA Token 비율 동적 결정
+        # use_dynamic_grid       : Grid stride 동적 결정
+        # use_sttm               : STTM 공간+시간 merge (기존 STTM)
+        # use_quadtree_bipartite : Quadtree + Bipartite merge
         # ========================================
-        # 동적 모드 플래그
-        # use_dynamic_protect: Exp 2 - GA Token 비율 동적
-        # use_dynamic_grid:    Exp 3 - Grid stride 동적
-        # use_sttm:            Exp 5 - STTM 공간+시간 merge
-        # ========================================
-        self.use_dynamic_protect  = False
-        self.use_dynamic_grid     = False
-        self.use_sttm             = False
+        self.use_dynamic_protect    = False
+        self.use_dynamic_grid       = False
+        self.use_sttm               = False
+        self.use_quadtree_bipartite = False
+
+        # STTM 하이퍼파라미터
         self.sttm_spatial_thresh  = 0.8
         self.sttm_temporal_thresh = 0.6
+
+        # Quadtree-Bipartite 하이퍼파라미터
+        self.qt_spatial_thresh    = 0.8
+        self.qt_root_block_size   = 8
+        self.qt_min_block_size    = 2
+
         self.verbose_protect      = True
 
         # DINOv2 / Frame Attention 청크 처리
@@ -222,6 +231,7 @@ class Aggregator(nn.Module):
         if C_in != 3:
             raise ValueError(f"Expected 3 input channels, got {C_in}")
 
+        # 모드별 로그 헤더
         if self.use_dynamic_protect or self.use_dynamic_grid:
             reset_frame_counter()
             if self.verbose_protect:
@@ -231,14 +241,24 @@ class Aggregator(nn.Module):
                 if self.use_dynamic_grid:
                     mode_str.append("Dynamic grid stride")
                 print(f"\n{'='*50}")
-                print(f"{' + '.join(mode_str)} 모드 | 총 {B*S}개 프레임")
+                print(f"{' + '.join(mode_str)} 모드 | 총 {B*S}개 프레임 | cal_layer={self.cal_layer}")
                 print(f"{'='*50}")
 
         if self.use_sttm and self.verbose_protect:
             print(f"\n{'='*50}")
             print(f"STTM 모드 | 총 {B*S}개 프레임 "
                   f"| spatial_thresh={self.sttm_spatial_thresh} "
-                  f"| temporal_thresh={self.sttm_temporal_thresh}")
+                  f"| temporal_thresh={self.sttm_temporal_thresh} "
+                  f"| cal_layer={self.cal_layer}")
+            print(f"{'='*50}")
+
+        if self.use_quadtree_bipartite and self.verbose_protect:
+            print(f"\n{'='*50}")
+            print(f"Quadtree-Bipartite 모드 | 총 {B*S}개 프레임")
+            print(f"  spatial_thresh = {self.qt_spatial_thresh}")
+            print(f"  root_block     = {self.qt_root_block_size}×{self.qt_root_block_size}")
+            print(f"  min_block      = {self.qt_min_block_size}×{self.qt_min_block_size}")
+            print(f"  cal_layer      = {self.cal_layer}")
             print(f"{'='*50}")
 
         # Step 1: 이미지 정규화 + DINOv2 인코딩 (청크 처리)
@@ -256,7 +276,7 @@ class Aggregator(nn.Module):
         if self.rope is not None:
             pos = self.position_getter(B * S, H // self.patch_size, W // self.patch_size, device=images.device)
 
-        # Step 2: GA Map 계산 (STTM 모드에서는 사용 안 하지만 유지)
+        # Step 2: GA Map 계산 (STTM 모드에서는 사용 안 함)
         info_map = None
         protect_ratio = self.ga_protect_base_ratio
         protect_aux_map = None
@@ -315,6 +335,9 @@ class Aggregator(nn.Module):
         pos_to_use = pos
         if use_adaptive_cache:
             self.adaptive_cache.reset()
+
+        # 새 cal_layer 적용 시 이전 m_u 캐시 초기화
+        self.m_u = None
 
         for block_idx in range(self.aa_block_num):
             for attn_type in self.aa_order:
@@ -493,8 +516,12 @@ class Aggregator(nn.Module):
                 use_dynamic_protect=self.use_dynamic_protect,
                 use_dynamic_grid=self.use_dynamic_grid,
                 use_sttm=self.use_sttm,
+                use_quadtree_bipartite=self.use_quadtree_bipartite,
                 sttm_spatial_thresh=self.sttm_spatial_thresh,
                 sttm_temporal_thresh=self.sttm_temporal_thresh,
+                qt_spatial_thresh=self.qt_spatial_thresh,
+                qt_root_block_size=self.qt_root_block_size,
+                qt_min_block_size=self.qt_min_block_size,
                 verbose=verbose,
             )
 
