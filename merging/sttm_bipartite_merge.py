@@ -407,10 +407,30 @@ def token_merge_quadtree_bipartite(
                             verbose=verbose,
                         )
 
-                    k = max(1, int(info.shape[-2] * info.shape[-1] * protect_ratio))
-                    topk_idx = info.flatten(1).topk(k, dim=1).indices
+                    num_patches = info.shape[-2] * info.shape[-1]
+                    info_flat = info.flatten(1)
                     offsets = torch.arange(num_imgs, device=device) * tokens_per_img + 5
-                    protected_indices = (topk_idx + offsets[:, None]).flatten()
+
+                    if torch.is_tensor(protect_ratio):
+                        protect_ratios = protect_ratio.to(device).flatten().to(torch.float32)
+                        if protect_ratios.numel() == 1:
+                            protect_ratios = protect_ratios.expand(num_imgs)
+                        elif protect_ratios.numel() != num_imgs:
+                            repeats = (num_imgs + protect_ratios.numel() - 1) // protect_ratios.numel()
+                            protect_ratios = protect_ratios.repeat(repeats)[:num_imgs]
+
+                        protected_chunks = []
+                        for img_idx in range(num_imgs):
+                            ratio_i = float(protect_ratios[img_idx].clamp(0.0, 1.0).item())
+                            k_i = max(1, int(num_patches * ratio_i))
+                            topk_i = info_flat[img_idx].topk(k_i, dim=0).indices
+                            protected_chunks.append(topk_i + offsets[img_idx])
+                        protected_indices = torch.cat(protected_chunks, dim=0)
+                    else:
+                        ratio = max(0.0, min(float(protect_ratio), 1.0))
+                        k = max(1, int(num_patches * ratio))
+                        topk_idx = info_flat.topk(k, dim=1).indices
+                        protected_indices = (topk_idx + offsets[:, None]).flatten()
                 else:
                     num_protected = int(N * 0.1)
                     step = max(1, N // num_protected)
