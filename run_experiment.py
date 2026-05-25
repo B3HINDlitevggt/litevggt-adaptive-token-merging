@@ -2,23 +2,28 @@
 LiteVGGT Dynamic Token Merging 실험 스크립트
 
 [모드 선택]
-  baseline         : 원본 (고정 10%, stride 2×2)
-  dynamic_protect  : GA Token 비율만 동적 결정 (Exp 2)
-  dynamic_grid     : Grid stride만 동적 결정   (Exp 3)
-  dynamic_all      : 둘 다 동시 적용           (Exp 4)
-  sttm             : STTM 공간+시간 merge      (Exp 5)
+  baseline           : 원본 (고정 10%, stride 2×2)
+  dynamic_protect    : GA Token 비율만 동적 결정
+  dynamic_grid       : Grid stride만 동적 결정
+  dynamic_all        : 둘 다 동시 적용
+  sttm               : STTM 공간+시간 merge (기존)
+  quadtree_bipartite : Quadtree + Bipartite merge (★ 새 방식)
+
+[cal_layer 옵션] (몇 번 merge를 재계산할지)
+  --cal_layer_mode 4  : 기본값, [0, 6, 15, 20] (4번)
+  --cal_layer_mode 3  : [0, 8, 16]
+  --cal_layer_mode 2  : [0, 12]
+  --cal_layer_mode 1  : [0]
 
 [실행 예시]
-  GT_PATH="./SampleSet/MVS Data/Points/stl/stl001_total.ply"
-
   CUDA_VISIBLE_DEVICES=0 python3 run_experiment.py \
       --img_dir ./SampleSet/test2 \
-      --output_dir ./output/sttm \
+      --output_dir ./output/qt_bipartite \
       --gt_path "$GT_PATH" \
-      --mode sttm \
+      --mode quadtree_bipartite \
       --baseline_dir ./output/baseline \
-      --sttm_spatial_thresh 0.8 \
-      --sttm_temporal_thresh 0.6
+      --qt_spatial_thresh 0.8 \
+      --cal_layer_mode 4
 """
 
 import torch
@@ -26,7 +31,6 @@ import os
 import numpy as np
 import argparse
 import time
-import io
 from datetime import datetime
 from vggt.models.vggt import VGGT
 from vggt.utils.pose_enc import pose_encoding_to_extri_intri
@@ -48,7 +52,7 @@ class Logger:
     def add(self, text=""):
         self.lines.append(text)
 
-    def header(self, img_dir, num_frames, H, W, ckpt_path):
+    def header(self, img_dir, num_frames, H, W, ckpt_path, cal_layer):
         ph, pw = H // 14, W // 14
         tpf = ph * pw + 5
         self.add("=" * 60)
@@ -65,6 +69,7 @@ class Logger:
         self.add(f"  패치 그리드      : {ph} × {pw}")
         self.add(f"  토큰 수/프레임   : {tpf}개  (패치 {ph*pw} + 특수 5)")
         self.add(f"  전체 토큰 수     : {tpf * num_frames:,}개")
+        self.add(f"  cal_layer        : {cal_layer}  ({len(cal_layer)}번 재계산)")
         self.add()
 
     def merge_result(self, tokens_before, ga, dst, src_removed, tokens_after,
@@ -80,6 +85,32 @@ class Logger:
         self.add(f"  GA Token (보호)          : {ga:,}개  ({ga//num_frames}개/프레임)")
         self.add(f"  Dst Token (생존)         : {dst:,}개  ({dst//num_frames}개/프레임)")
         self.add(f"  Src Token (제거)         : {src_removed:,}개  ({src_removed//num_frames}개/프레임)")
+        self.add(f"  merge 후 토큰            : {tokens_after:,}개  ({tokens_after//num_frames}개/프레임)")
+        self.add()
+        self.add(f"  압축률                   : {comp:.1f}%")
+        self.add(f"  Attention 연산량 감소    : {attn:.1f}%")
+        self.add()
+
+    def qt_result(self, tokens_before, tokens_after, num_frames,
+                  spatial_thresh, root_size, min_size, node_stats=None):
+        comp = (1 - tokens_after / tokens_before) * 100
+        attn = (1 - (tokens_after / tokens_before) ** 2) * 100
+        self.add("[Quadtree-Bipartite Token Merging 결과]")
+        self.add(f"  spatial_thresh           : {spatial_thresh}")
+        self.add(f"  root_block_size          : {root_size}×{root_size}")
+        self.add(f"  min_block_size           : {min_size}×{min_size}")
+        self.add()
+        if node_stats is not None and node_stats.get("total_nodes", 0) > 0:
+            cnt = node_stats["counter"]
+            total = node_stats["total_nodes"]
+            self.add(f"  [노드 분포] (마지막 cal_layer 기준)")
+            self.add(f"    8×8 노드 : {cnt.get(8,0):,}개  ({cnt.get(8,0)/total*100:.1f}%)")
+            self.add(f"    4×4 노드 : {cnt.get(4,0):,}개  ({cnt.get(4,0)/total*100:.1f}%)")
+            self.add(f"    2×2 노드 : {cnt.get(2,0):,}개  ({cnt.get(2,0)/total*100:.1f}%)")
+            self.add(f"    전체 노드: {total:,}개")
+            self.add(f"    평균 패치/노드: {node_stats['total_patches']/total:.2f}")
+            self.add()
+        self.add(f"  merge 전 토큰            : {tokens_before:,}개  ({tokens_before//num_frames}개/프레임)")
         self.add(f"  merge 후 토큰            : {tokens_after:,}개  ({tokens_after//num_frames}개/프레임)")
         self.add()
         self.add(f"  압축률                   : {comp:.1f}%")
@@ -134,7 +165,7 @@ class Logger:
 
 
 # =====================================================================
-# 유틸
+# 유틸 (기존 그대로)
 # =====================================================================
 def save_ply(points, colors, save_dir, name, max_points=15000000):
     os.makedirs(save_dir, exist_ok=True)
@@ -196,6 +227,17 @@ def save_baseline_cd(output_dir, cd):
     print(f"✅ Baseline CD 저장: {cd_file}")
 
 
+def get_cal_layer(mode):
+    """cal_layer_mode에 따라 어느 레이어에서 merge 재계산할지 결정."""
+    presets = {
+        1: [0],
+        2: [0, 12],
+        3: [0, 8, 16],
+        4: [0, 6, 15, 20],
+    }
+    return presets.get(mode, [0, 6, 15, 20])
+
+
 # =====================================================================
 # 메인
 # =====================================================================
@@ -209,13 +251,20 @@ def get_args_parser():
     parser.add_argument("--gt_path",              type=str,   default=None)
     parser.add_argument("--baseline_dir",         type=str,   default=None)
     parser.add_argument("--mode",                 type=str,   default="baseline",
-                        choices=["baseline", "dynamic_protect", "dynamic_grid", "dynamic_all", "sttm"])
-    parser.add_argument("--sttm_spatial_thresh",  type=float, default=0.8,
-                        help="STTM 공간 merge 임계값 (높을수록 덜 merge)")
-    parser.add_argument("--sttm_temporal_thresh", type=float, default=0.6,
-                        help="STTM 시간 merge 임계값 (-1이면 시간 merge 비활성화)")
-    parser.add_argument("--max_frames",           type=int,   default=None,
-                        help="최대 몇 개의 프레임만 사용할지 제한 (자동화 실험용)")
+                        choices=["baseline", "dynamic_protect", "dynamic_grid",
+                                 "dynamic_all", "sttm", "quadtree_bipartite"])
+    parser.add_argument("--sttm_spatial_thresh",  type=float, default=0.8)
+    parser.add_argument("--sttm_temporal_thresh", type=float, default=0.6)
+    parser.add_argument("--qt_spatial_thresh",    type=float, default=0.8,
+                        help="Quadtree spatial merge 임계값")
+    parser.add_argument("--qt_root_block_size",   type=int,   default=8,
+                        help="Quadtree 시작 블록 크기 (8=Level 1)")
+    parser.add_argument("--qt_min_block_size",    type=int,   default=2,
+                        help="Quadtree 종료 블록 크기 (2=Level 3)")
+    parser.add_argument("--cal_layer_mode",       type=int,   default=4,
+                        choices=[1, 2, 3, 4],
+                        help="몇 번 merge를 재계산할지 (1/2/3/4)")
+    parser.add_argument("--max_frames",           type=int,   default=None)
     parser.add_argument("--no_verbose",           action="store_true")
     return parser
 
@@ -225,14 +274,17 @@ def main(args):
     dtype   = torch.bfloat16 if torch.cuda.get_device_capability()[0] >= 8 else torch.float16
     verbose = not args.no_verbose
 
+    cal_layer = get_cal_layer(args.cal_layer_mode)
+
     mode_labels = {
-        "baseline":        "Baseline  (fixed 10%, stride 2×2)",
-        "dynamic_protect": "Dynamic Protect Ratio  (Exp 2)",
-        "dynamic_grid":    "Dynamic Grid Stride    (Exp 3)",
-        "dynamic_all":     "Dynamic ALL  (protect + grid, Exp 4)",
-        "sttm":            f"STTM  (spatial={args.sttm_spatial_thresh}, temporal={args.sttm_temporal_thresh}, Exp 5)",
+        "baseline":           "Baseline  (fixed 10%, stride 2×2)",
+        "dynamic_protect":    "Dynamic Protect Ratio",
+        "dynamic_grid":       "Dynamic Grid Stride",
+        "dynamic_all":        "Dynamic ALL  (protect + grid)",
+        "sttm":               f"STTM  (spatial={args.sttm_spatial_thresh}, temporal={args.sttm_temporal_thresh})",
+        "quadtree_bipartite": f"Quadtree-Bipartite (qt_thresh={args.qt_spatial_thresh}, root={args.qt_root_block_size}, min={args.qt_min_block_size})",
     }
-    mode_label = mode_labels[args.mode]
+    mode_label = mode_labels[args.mode] + f" | cal_layer={cal_layer}"
     print(f"\n{'='*55}\n모드: {mode_label}\n{'='*55}")
 
     logger = Logger(args.output_dir, mode_label)
@@ -244,26 +296,29 @@ def main(args):
     model.to(torch.bfloat16)
     model.eval()
 
-    # -----------------------------------------------
     # 모드별 플래그 설정
-    # -----------------------------------------------
-    model.aggregator.use_dynamic_protect = args.mode in ("dynamic_protect", "dynamic_all")
-    model.aggregator.use_dynamic_grid    = args.mode in ("dynamic_grid",    "dynamic_all")
-    model.aggregator.use_sttm            = args.mode == "sttm"
-    model.aggregator.sttm_spatial_thresh  = args.sttm_spatial_thresh
-    model.aggregator.sttm_temporal_thresh = args.sttm_temporal_thresh
-    model.aggregator.verbose_protect     = verbose
+    model.aggregator.use_dynamic_protect    = args.mode in ("dynamic_protect", "dynamic_all")
+    model.aggregator.use_dynamic_grid       = args.mode in ("dynamic_grid",    "dynamic_all")
+    model.aggregator.use_sttm               = args.mode == "sttm"
+    model.aggregator.use_quadtree_bipartite = args.mode == "quadtree_bipartite"
+
+    model.aggregator.sttm_spatial_thresh    = args.sttm_spatial_thresh
+    model.aggregator.sttm_temporal_thresh   = args.sttm_temporal_thresh
+    model.aggregator.qt_spatial_thresh      = args.qt_spatial_thresh
+    model.aggregator.qt_root_block_size     = args.qt_root_block_size
+    model.aggregator.qt_min_block_size      = args.qt_min_block_size
+
+    model.aggregator.cal_layer              = cal_layer
+    model.aggregator.verbose_protect        = verbose
 
     reset_frame_counter()
     set_log_path(os.path.join(args.output_dir, "frame_log.csv"))
 
-    # 이미지 파일 수집 및 정렬
+    # 이미지 로드
     all_images = sorted([
         os.path.join(args.img_dir, f) for f in os.listdir(args.img_dir)
         if f.lower().endswith(('.png', '.jpg', '.jpeg'))
     ])
-    
-    # 💡 [프레임 제한 추가] max_frames가 설정되어 있으면 리스트 슬라이싱
     if args.max_frames is not None:
         all_images = all_images[:args.max_frames]
 
@@ -274,16 +329,15 @@ def main(args):
 
     N         = len(images)
     N_aligned = (N // 8) * 8
-    
     if N_aligned == 0:
-        print(f"❌ Error: aligned 프레임 수가 0입니다. (데이터가 부족하거나 max_frames가 너무 작습니다. N={N})")
+        print(f"❌ Error: aligned 프레임 수가 0입니다. N={N}")
         return
 
     images    = torch.stack(images[:N_aligned], dim=0).to(device)
     H, W      = images.shape[-2], images.shape[-1]
     print(f"✅ 데이터 로드 완료 - images shape: {images.shape}")
 
-    logger.header(args.img_dir, N_aligned, H, W, args.ckpt_path)
+    logger.header(args.img_dir, N_aligned, H, W, args.ckpt_path, cal_layer)
 
     patch_width  = W // 14
     patch_height = H // 14
@@ -318,23 +372,43 @@ def main(args):
     t_elapsed = time.time() - t_start
     print(f"✅ 추론 시간: {t_elapsed:.1f}초 ({t_elapsed/60:.1f}분)")
 
-    # -----------------------------------------------
     # 토큰 수치 계산 및 로그
-    # -----------------------------------------------
     tokens_before = (patch_height * patch_width + 5) * N_aligned
 
-    # 실행시간 로그
     logger.add(f"[실행 시간]")
     logger.add(f"  추론 시간 : {t_elapsed:.1f}초  ({t_elapsed/60:.1f}분)")
     logger.add()
 
-    if args.mode == "sttm":
+    if args.mode == "quadtree_bipartite":
+        # 노드 통계 가져오기
+        from merging.sttm_bipartite_merge import get_node_stats
+        node_stats = get_node_stats()
+
+        # 노드 분포로 추정 토큰 수 계산
+        # 노드 1개당 1 Dst + (노드 평균 패치 - 1) Src 후보
+        # 실제 압축률은 merge_ratio에 따라 달라지지만 보통 노드당 1개로 압축됨
+        if node_stats.get("total_nodes", 0) > 0:
+            nodes_per_frame = node_stats["total_nodes"] // N_aligned
+            ga_per_frame = max(1, int(patch_height * patch_width * 0.1))
+            tokens_after = (nodes_per_frame + ga_per_frame + 5) * N_aligned
+        else:
+            tokens_after = int(tokens_before * 0.35)
+            print("⚠️  노드 통계 못 가져옴, 추정값 사용")
+
+        logger.qt_result(
+            tokens_before=tokens_before,
+            tokens_after=tokens_after,
+            num_frames=N_aligned,
+            spatial_thresh=args.qt_spatial_thresh,
+            root_size=args.qt_root_block_size,
+            min_size=args.qt_min_block_size,
+            node_stats=node_stats,
+        )
+
+    elif args.mode == "sttm":
         tokens_after = getattr(model.aggregator, 'last_sttm_tokens_after', None)
         if tokens_after is None:
             tokens_after = int(tokens_before * 0.35)
-            print("⚠️  실제 STTM 토큰 수를 읽지 못해 추정값 사용")
-        else:
-            print(f"✅ 실제 STTM merge 후 토큰: {tokens_after:,}개")
         logger.sttm_result(
             tokens_before=tokens_before,
             tokens_after=tokens_after,
@@ -375,11 +449,9 @@ def main(args):
             print(f"✅ Chamfer Distance: {cd:.6f}")
             logger.cd_result(cd, args.gt_path)
 
-    # baseline이면 CD 저장
     if args.mode == "baseline" and cd is not None:
         save_baseline_cd(args.output_dir, cd)
 
-    # baseline 대비 비교
     if args.mode != "baseline":
         baseline_ga    = max(1, int(patch_height * patch_width * 0.1))
         baseline_dst   = (patch_height // 2) * (patch_width // 2)
@@ -409,3 +481,34 @@ if __name__ == "__main__":
     parser = get_args_parser()
     args   = parser.parse_args()
     main(args)
+
+
+
+"""
+# Quadtree-Bipartite, 4번 재계산 (기본)
+CUDA_VISIBLE_DEVICES=0 python3 run_experiment.py \
+    --img_dir ./SampleSet/test2 \
+    --output_dir ./output/qt_4 \
+    --gt_path "$GT_PATH" \
+    --mode quadtree_bipartite \
+    --baseline_dir ./output/baseline \
+    --qt_spatial_thresh 0.8 \
+    --cal_layer_mode 4
+
+# 1번만 재계산
+CUDA_VISIBLE_DEVICES=0 python3 run_experiment.py \
+    --img_dir ./SampleSet/test2 \
+    --output_dir ./output/qt_1 \
+    --gt_path "$GT_PATH" \
+    --mode quadtree_bipartite \
+    --baseline_dir ./output/baseline \
+    --cal_layer_mode 1
+
+# baseline에서도 cal_layer 줄여보기
+CUDA_VISIBLE_DEVICES=0 python3 run_experiment.py \
+    --img_dir ./SampleSet/test2 \
+    --output_dir ./output/baseline_cal1 \
+    --gt_path "$GT_PATH" \
+    --mode baseline \
+    --cal_layer_mode 1
+"""
