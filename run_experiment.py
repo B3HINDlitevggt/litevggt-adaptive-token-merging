@@ -328,6 +328,8 @@ def get_args_parser():
     parser.add_argument("--device",               type=str,   default="cuda:0")
     parser.add_argument("--img_dir",              type=str,   required=True)
     parser.add_argument("--keep_ratio",           type=float, default=0.42)
+    parser.add_argument("--max_ply_points",       type=int,   default=15000000)
+    parser.add_argument("--skip_ply",             action="store_true")
     parser.add_argument("--output_dir",           type=str,   required=True)
     parser.add_argument("--gt_path",              type=str,   default=None)
     parser.add_argument("--baseline_dir",         type=str,   default=None)
@@ -496,7 +498,10 @@ def main(args):
         points    = points[keep_idx]
         colors    = colors[keep_idx]
 
-        save_ply(points, colors, args.output_dir, "recon.ply")
+        if args.skip_ply:
+            print(f"⏭️  Skipping PLY save. Valid selected points: {len(points)}")
+        else:
+            save_ply(points, colors, args.output_dir, "recon.ply", max_points=args.max_ply_points)
 
     t_elapsed = time.time() - t_start
     print(f"✅ 추론 시간: {t_elapsed:.1f}초 ({t_elapsed/60:.1f}분)")
@@ -506,6 +511,8 @@ def main(args):
 
     logger.add(f"[실행 시간]")
     logger.add(f"  추론 시간 : {t_elapsed:.1f}초  ({t_elapsed/60:.1f}분)")
+    logger.add(f"  PLY 저장 생략 : {args.skip_ply}")
+    logger.add(f"  max_ply_points : {args.max_ply_points}")
     logger.add()
 
     if args.mode == "quadtree_bipartite":

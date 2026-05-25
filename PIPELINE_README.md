@@ -306,6 +306,10 @@ recon.ply
 cd_result.txt, when --gt_path is provided
 ```
 
+For large ScanNet/ScanNet++ runs, use `--skip_ply` to collect runtime/token
+metrics without writing a large point cloud, or cap the visualization size with
+`--max_ply_points 2000000`.
+
 ## Depth Boundary Cache
 
 Depth Anything V2-Small checkpoint:
