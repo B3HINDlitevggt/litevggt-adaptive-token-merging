@@ -65,7 +65,7 @@ class Attention(nn.Module):
         B_q, H_q, N_q, D_q = q.shape
 
         if global_merging:
-            m_a, u_a = m_u
+            m_a, u_a = m_u[:2]
 
             q = q.permute(0, 2, 1, 3)
             k = k.permute(0, 2, 1, 3)
@@ -125,7 +125,7 @@ class MemEffAttention(Attention):
         if not XFORMERS_AVAILABLE:
             if attn_bias is not None:
                 raise AssertionError("xFormers is required for using nested tensors")
-            return super().forward(x, pos=pos, global_merging=global_merging)
+            return super().forward(x, pos=pos, global_merging=global_merging, m_u=m_u)
 
         B, N, C = x.shape
         qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads)
