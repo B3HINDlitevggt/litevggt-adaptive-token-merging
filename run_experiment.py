@@ -31,6 +31,7 @@ import os
 import numpy as np
 import argparse
 import time
+import cv2
 from datetime import datetime
 from vggt.models.vggt import VGGT
 from vggt.utils.pose_enc import pose_encoding_to_extri_intri
@@ -238,6 +239,86 @@ def get_cal_layer(mode):
     return presets.get(mode, [0, 6, 15, 20])
 
 
+def select_frames_by_sobel(image_paths, n_keep):
+    if n_keep is None or len(image_paths) <= n_keep:
+        selected = list(range(len(image_paths)))
+        return image_paths, selected, []
+
+    scores = []
+    for path in image_paths:
+        image = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+        if image is None:
+            scores.append(0.0)
+            continue
+        image = image.astype(np.float32) / 255.0
+        sx = cv2.Sobel(image, cv2.CV_32F, 1, 0, ksize=3)
+        sy = cv2.Sobel(image, cv2.CV_32F, 0, 1, ksize=3)
+        scores.append(float(np.sqrt(sx * sx + sy * sy).mean()))
+
+    top_idx = np.argsort(np.asarray(scores))[::-1][:n_keep]
+    selected = sorted(int(i) for i in top_idx)
+    return [image_paths[i] for i in selected], selected, scores
+
+
+def find_depth_file(depth_root, image_path):
+    stem = os.path.splitext(os.path.basename(image_path))[0]
+    candidates = [
+        os.path.join(depth_root, f"{stem}.npy"),
+        os.path.join(depth_root, f"{stem}.npz"),
+        os.path.join(depth_root, f"{stem}.png"),
+        os.path.join(depth_root, f"{stem}.jpg"),
+    ]
+    for candidate in candidates:
+        if os.path.exists(candidate):
+            return candidate
+    for root, _, files in os.walk(depth_root):
+        for ext in (".npy", ".npz", ".png", ".jpg", ".jpeg"):
+            filename = f"{stem}{ext}"
+            if filename in files:
+                return os.path.join(root, filename)
+    return None
+
+
+def load_depth_file(path):
+    if path.endswith(".npy"):
+        depth = np.load(path)
+    elif path.endswith(".npz"):
+        data = np.load(path)
+        key = "depth" if "depth" in data else data.files[0]
+        depth = data[key]
+    else:
+        depth = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+    depth = np.asarray(depth, dtype=np.float32)
+    if depth.ndim == 3:
+        depth = depth[..., 0]
+    return np.nan_to_num(depth, nan=0.0, posinf=0.0, neginf=0.0)
+
+
+def build_ga_depth_tensor(ga_depth_dir, image_paths, target_hw):
+    if ga_depth_dir is None:
+        return None
+
+    target_h, target_w = target_hw
+    depth_tensors = []
+    for image_path in image_paths:
+        depth_path = find_depth_file(ga_depth_dir, image_path)
+        if depth_path is None:
+            raise FileNotFoundError(
+                f"No GA depth file found for image '{os.path.basename(image_path)}' under {ga_depth_dir}"
+            )
+        depth = load_depth_file(depth_path)
+        if depth.shape != (target_h, target_w):
+            depth = cv2.resize(depth, (target_w, target_h), interpolation=cv2.INTER_NEAREST)
+        depth_tensors.append(torch.from_numpy(depth.astype(np.float32)))
+
+    stacked = torch.stack(depth_tensors, dim=0)
+    print(
+        f"✅ GA depth loaded: count={len(depth_tensors)}, shape={tuple(stacked.shape)}, "
+        f"min={stacked.min().item():.4f}, max={stacked.max().item():.4f}, mean={stacked.mean().item():.4f}"
+    )
+    return stacked
+
+
 # =====================================================================
 # 메인
 # =====================================================================
@@ -265,6 +346,17 @@ def get_args_parser():
                         choices=[1, 2, 3, 4],
                         help="몇 번 merge를 재계산할지 (1/2/3/4)")
     parser.add_argument("--max_frames",           type=int,   default=None)
+    parser.add_argument("--frame_selection",      type=str,   default="none",
+                        choices=["none", "sobel"],
+                        help="Input frame selection method before LiteVGGT inference")
+    parser.add_argument("--ga_depth_dir",         type=str,   default=None)
+    parser.add_argument("--ga_edge_weight",       type=float, default=0.7)
+    parser.add_argument("--ga_variance_weight",   type=float, default=0.3)
+    parser.add_argument("--ga_depth_boundary_weight", type=float, default=0.0)
+    parser.add_argument("--ga_depth_map_is_boundary", action="store_true")
+    parser.add_argument("--ga_protect_base_ratio", type=float, default=0.1)
+    parser.add_argument("--ga_depth_protect_ratio", type=float, default=0.0)
+    parser.add_argument("--use_adaptive_cache",   action="store_true")
     parser.add_argument("--no_verbose",           action="store_true")
     return parser
 
@@ -295,6 +387,14 @@ def main(args):
     model.load_state_dict(ckpt, strict=False)
     model.to(torch.bfloat16)
     model.eval()
+    model.set_ga_metric_weights(
+        edge_weight=args.ga_edge_weight,
+        variance_weight=args.ga_variance_weight,
+        depth_boundary_weight=args.ga_depth_boundary_weight,
+        depth_map_is_boundary=args.ga_depth_map_is_boundary,
+        protect_base_ratio=args.ga_protect_base_ratio,
+        depth_protect_ratio=args.ga_depth_protect_ratio,
+    )
 
     # 모드별 플래그 설정
     model.aggregator.use_dynamic_protect    = args.mode in ("dynamic_protect", "dynamic_all")
@@ -319,8 +419,16 @@ def main(args):
         os.path.join(args.img_dir, f) for f in os.listdir(args.img_dir)
         if f.lower().endswith(('.png', '.jpg', '.jpeg'))
     ])
-    if args.max_frames is not None:
+    original_frame_count = len(all_images)
+    selected_indices = list(range(original_frame_count))
+    sobel_scores = []
+    if args.frame_selection == "sobel":
+        all_images, selected_indices, sobel_scores = select_frames_by_sobel(all_images, args.max_frames)
+        print(f"✅ Sobel frame selection: {original_frame_count} -> {len(all_images)} frames")
+        print(f"   selected indices: {selected_indices}")
+    elif args.max_frames is not None:
         all_images = all_images[:args.max_frames]
+        selected_indices = selected_indices[:args.max_frames]
 
     images = []
     for p in all_images:
@@ -338,16 +446,37 @@ def main(args):
     print(f"✅ 데이터 로드 완료 - images shape: {images.shape}")
 
     logger.header(args.img_dir, N_aligned, H, W, args.ckpt_path, cal_layer)
+    logger.add("[Pipeline Options]")
+    logger.add(f"  frame_selection          : {args.frame_selection}")
+    logger.add(f"  original_frame_count     : {original_frame_count}")
+    logger.add(f"  selected_frame_count     : {N_aligned}")
+    logger.add(f"  selected_indices         : {selected_indices[:N_aligned]}")
+    if sobel_scores:
+        kept_scores = [sobel_scores[i] for i in selected_indices[:N_aligned]]
+        logger.add(f"  selected_sobel_mean      : {float(np.mean(kept_scores)):.6f}")
+    logger.add(f"  token_merging_mode       : {args.mode}")
+    logger.add(f"  adaptive_cache           : {args.use_adaptive_cache}")
+    logger.add(f"  ga_depth_dir             : {args.ga_depth_dir}")
+    logger.add(f"  ga_weights               : edge={args.ga_edge_weight}, variance={args.ga_variance_weight}, depth={args.ga_depth_boundary_weight}")
+    logger.add(f"  ga_protect               : base={args.ga_protect_base_ratio}, depth_split={args.ga_depth_protect_ratio}")
+    logger.add()
 
     patch_width  = W // 14
     patch_height = H // 14
     model.update_patch_dimensions(patch_width, patch_height)
     images = images[None]
+    ga_depth = build_ga_depth_tensor(args.ga_depth_dir, all_images[:N_aligned], images.shape[-2:])
+    if ga_depth is not None:
+        ga_depth = ga_depth.unsqueeze(0).to(device)
 
     # 추론
     t_start = time.time()
     with torch.no_grad():
-        aggregated_tokens_list, patch_start_idx = model.aggregator(images)
+        aggregated_tokens_list, patch_start_idx = model.aggregator(
+            images,
+            ga_depth=ga_depth,
+            use_adaptive_cache=args.use_adaptive_cache,
+        )
 
         with torch.amp.autocast("cuda", enabled=True, dtype=dtype):
             pose_enc = model.camera_head(aggregated_tokens_list)[-1]

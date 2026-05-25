@@ -243,6 +243,69 @@ export DTU_DIR=/data/eval_data/dtu
 bash scripts/run_eval_dtu.sh
 ```
 
+## Final Integrated Pipeline
+
+Use this when evaluating the full project pipeline against LiteVGGT:
+
+```text
+Sobel frame selection
+  -> default LiteVGGT aggregator
+  -> Depth Anything V2 boundary GA score, b008_r010
+  -> Quadtree-Bipartite token merging
+  -> optional adaptive merge-index cache
+  -> camera/depth/point outputs
+```
+
+This is intentionally different from `VGGT_AGGREGATOR=sobel`. The environment
+aggregator switch replaces the whole aggregator, while the final pipeline keeps
+the default aggregator so that depth-aware GA, quadtree-bipartite merging, and
+adaptive cache can run together. Sobel is used as an input frame-selection step.
+
+LiteVGGT comparison run:
+
+```bash
+python3 run_experiment.py \
+  --ckpt_path checkpoints/te_dict.pt \
+  --img_dir /data/drive_files/scannetpp1 \
+  --output_dir outputs/final_pipeline_scannetpp1/litevggt \
+  --mode baseline \
+  --max_frames 48 \
+  --cal_layer_mode 4
+```
+
+Full integrated run:
+
+```bash
+python3 run_experiment.py \
+  --ckpt_path checkpoints/te_dict.pt \
+  --img_dir /data/drive_files/scannetpp1 \
+  --output_dir outputs/final_pipeline_scannetpp1/integrated \
+  --mode quadtree_bipartite \
+  --frame_selection sobel \
+  --max_frames 24 \
+  --ga_depth_dir /data/eval_data/scannetpp_da2s_depth_boundary/scannetpp1 \
+  --ga_edge_weight 0.644 \
+  --ga_variance_weight 0.276 \
+  --ga_depth_boundary_weight 0.080 \
+  --ga_depth_map_is_boundary \
+  --ga_protect_base_ratio 0.10 \
+  --ga_depth_protect_ratio 0.0 \
+  --use_adaptive_cache \
+  --qt_spatial_thresh 0.8 \
+  --qt_root_block_size 8 \
+  --qt_min_block_size 2 \
+  --cal_layer_mode 4
+```
+
+Each run writes:
+
+```text
+experiment_log.txt
+frame_log.csv
+recon.ply
+cd_result.txt, when --gt_path is provided
+```
+
 ## Depth Boundary Cache
 
 Depth Anything V2-Small checkpoint:
