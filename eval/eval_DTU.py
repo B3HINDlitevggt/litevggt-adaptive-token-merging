@@ -288,7 +288,13 @@ def build_ga_depth_tensor(ga_depth_dir, scene, image_paths, target_hw):
             depth = cv2.resize(depth, (target_w, target_h), interpolation=cv2.INTER_NEAREST)
         depth_tensors.append(torch.from_numpy(depth))
 
-    return torch.stack(depth_tensors, dim=0)
+    stacked = torch.stack(depth_tensors, dim=0)
+    print(
+        f"Loaded GA depth maps: scene={scene}, count={len(depth_tensors)}, "
+        f"shape={tuple(stacked.shape)}, min={stacked.min().item():.4f}, "
+        f"max={stacked.max().item():.4f}, mean={stacked.mean().item():.4f}"
+    )
+    return stacked
 
 
 def load_model(device, model_path):
@@ -439,6 +445,13 @@ def main():
         protect_max_ratio=args.ga_protect_max_ratio,
         protect_nms=args.ga_protect_nms,
         depth_protect_ratio=args.ga_depth_protect_ratio,
+    )
+    print(
+        "GA config: "
+        f"edge={args.ga_edge_weight}, variance={args.ga_variance_weight}, "
+        f"depth_boundary={args.ga_depth_boundary_weight}, "
+        f"depth_dir={args.ga_depth_dir}, depth_is_boundary={args.ga_depth_map_is_boundary}, "
+        f"protect_base={args.ga_protect_base_ratio}, depth_protect={args.ga_depth_protect_ratio}"
     )
 
     # Set random seeds
