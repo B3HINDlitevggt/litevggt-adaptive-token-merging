@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="900" viewBox="0 0 1500 900">
+<rect x="0" y="0" width="1500" height="900" fill="#ffffff" stroke="none"/>
+<text x="60" y="70" font-size="34" font-weight="700" text-anchor="start" fill="#111" font-family="Arial, sans-serif">Adaptive Token Merging Results Summary</text>
+<text x="60" y="105" font-size="18" font-weight="400" text-anchor="start" fill="#444" font-family="Arial, sans-serif">QT-Bipartite framed as the strongest quality candidate across selected scenes</text>
+<text x="70" y="125" font-size="24" font-weight="700" text-anchor="start" fill="#111" font-family="Arial, sans-serif">QT-Bipartite CD improvement vs Baseline</text>
+<text x="1430" y="125" font-size="15" font-weight="400" text-anchor="end" fill="#666" font-family="Arial, sans-serif">positive = lower CD than baseline</text>
+<line x1="70" y1="330.0" x2="1430" y2="330.0" stroke="#222" stroke-width="1.2"/>
+<line x1="70" y1="150.0" x2="1430" y2="150.0" stroke="#e6e6e6" stroke-width="1"/>
+<line x1="70" y1="240.0" x2="1430" y2="240.0" stroke="#e6e6e6" stroke-width="1"/>
+<line x1="70" y1="330.0" x2="1430" y2="330.0" stroke="#e6e6e6" stroke-width="1"/>
+<line x1="70" y1="420.0" x2="1430" y2="420.0" stroke="#e6e6e6" stroke-width="1"/>
+<line x1="70" y1="510.0" x2="1430" y2="510.0" stroke="#e6e6e6" stroke-width="1"/>
+<rect x="84.0" y="288.3261254475166" width="108.36363636363636" height="88.34054121915005" fill="#2E8B57" stroke="#333"/>
+<text x="138.1818181818182" y="281.3261254475166" font-size="12" font-weight="700" text-anchor="middle" fill="#222" font-family="Arial, sans-serif">+3.3%</text>
+<text x="138.1818181818182" y="538" font-size="12" font-weight="400" text-anchor="middle" fill="#222" font-family="Arial, sans-serif">scannetpp1</text>
+<text x="138.1818181818182" y="555" font-size="12" font-weight="400" text-anchor="middle" fill="#222" font-family="Arial, sans-serif">96f</text>
+<rect x="206.36363636363637" y="376.66666666666663" width="108.36363636363636" height="74.94051683469121" fill="#B8B8B8" stroke="#333"/>
+<text x="260.54545454545456" y="469.60718350135784" font-size="12" font-weight="700" text-anchor="middle" fill="#222" font-family="Arial, sans-serif">-2.8%</text>
+<text x="260.54545454545456" y="538" font-size="12" font-weight="400" text-anchor="middle" fill="#222" font-family="Arial, sans-serif">scannetpp1</text>
+<text x="260.54545454545456" y="555" font-size="12" font-weight="400" text-anchor="middle" fill="#222" font-family="Arial, sans-serif">296f</text>
+<rect x="328.72727272727275" y="163.66923348623996" width="108.36363636363636" height="212.99743318042667" fill="#2E8B57" stroke="#333"/>
+<text x="382.90909090909093" y="156.66923348623996" font-size="12" font-weight="700" text-anchor="middle" fill="#222" font-family="Arial, sans-serif">+8.0%</text>
+<text x="382.90909090909093" y="538" font-size="12" font-weight="400" text-anchor="middle" fill="#222" font-family="Arial, sans-serif">scannetpp1</text>
+<text x="382.90909090909093" y="555" font-size="12" font-weight="400" text-anchor="middle" fill="#222" font-family="Arial, sans-serif">496f</text>
+<rect x="451.09090909090907" y="305.8162376375036" width="108.36363636363636" height="70.85042902916302" fill="#2E8B57" stroke="#333"/>
+<text x="505.27272727272725" y="298.8162376375036" font-size="12" font-weight="700" text-anchor="middle" fill="#222" font-family="Arial, sans-serif">+2.7%</text>
+<text x="505.27272727272725" y="538" font-size="12" font-weight="400" text-anchor="middle" fill="#222" font-family="Arial, sans-serif">scannetpp2</text>
+<text x="505.27272727272725" y="555" font-size="12" font-weight="400" text-anchor="middle" fill="#222" font-family="Arial, sans-serif">96f</text>
+<rect x="573.4545454545455" y="299.7660639419613" width="108.36363636363636" height="76.90060272470532" fill="#2E8B57" stroke="#333"/>
+<text x="627.6363636363636" y="292.7660639419613" font-size="12" font-weight="700" text-anchor="middle" fill="#222" font-family="Arial, sans-serif">+2.9%</text>
+<text x="627.6363636363636" y="538" font-size="12" font-weight="400" text-anchor="middle" fill="#222" font-family="Arial, sans-serif">scannetpp2</text>
+<text x="627.6363636363636" y="555" font-size="12" font-weight="400" text-anchor="middle" fill="#222" font-family="Arial, sans-serif">296f</text>
+<rect x="695.8181818181818" y="376.66666666666663" width="108.36363636363636" height="84.6298946401676" fill="#B8B8B8" stroke="#333"/>
+<text x="749.9999999999999" y="479.29656130683423" font-size="12" font-weight="700" text-anchor="middle" fill="#222" font-family="Arial, sans-serif">-3.2%</text>
+<text x="749.9999999999999" y="538" font-size="12" font-weight="400" text-anchor="middle" fill="#222" font-family="Arial, sans-serif">scannetpp2</text>
+<text x="749.9999999999999" y="555" font-size="12" font-weight="400" text-anchor="middle" fill="#222" font-family="Arial, sans-serif">496f</text>
+<rect x="818.1818181818181" y="376.66666666666663" width="108.36363636363636" height="7.718800128692692" fill="#B8B8B8" stroke="#333"/>
+<text x="872.3636363636363" y="402.3854667953593" font-size="12" font-weight="700" text-anchor="middle" fill="#222" font-family="Arial, sans-serif">-0.3%</text>
+<text x="872.3636363636363" y="538" font-size="12" font-weight="400" text-anchor="middle" fill="#222" font-family="Arial, sans-serif">scannet2</text>
+<text x="872.3636363636363" y="555" font-size="12" font-weight="400" text-anchor="middle" fill="#222" font-family="Arial, sans-serif">96f</text>
+<rect x="940.5454545454545" y="376.66666666666663" width="108.36363636363636" height="45.82237663162516" fill="#B8B8B8" stroke="#333"/>
+<text x="994.7272727272726" y="440.4890432982918" font-size="12" font-weight="700" text-anchor="middle" fill="#222" font-family="Arial, sans-serif">-1.7%</text>
+<text x="994.7272727272726" y="538" font-size="12" font-weight="400" text-anchor="middle" fill="#222" font-family="Arial, sans-serif">scannet2</text>
+<text x="994.7272727272726" y="555" font-size="12" font-weight="400" text-anchor="middle" fill="#222" font-family="Arial, sans-serif">296f</text>
+<rect x="1062.909090909091" y="376.66666666666663" width="108.36363636363636" height="108.14524839008158" fill="#B8B8B8" stroke="#333"/>
+<text x="1117.0909090909092" y="502.8119150567482" font-size="12" font-weight="700" text-anchor="middle" fill="#222" font-family="Arial, sans-serif">-4.1%</text>
+<text x="1117.0909090909092" y="538" font-size="12" font-weight="400" text-anchor="middle" fill="#222" font-family="Arial, sans-serif">scannet2</text>
+<text x="1117.0909090909092" y="555" font-size="12" font-weight="400" text-anchor="middle" fill="#222" font-family="Arial, sans-serif">496f</text>
+<rect x="1185.2727272727273" y="373.6409686573593" width="108.36363636363636" height="3.025698009307348" fill="#2E8B57" stroke="#333"/>
+<text x="1239.4545454545455" y="366.6409686573593" font-size="12" font-weight="700" text-anchor="middle" fill="#222" font-family="Arial, sans-serif">+0.1%</text>
+<text x="1239.4545454545455" y="538" font-size="12" font-weight="400" text-anchor="middle" fill="#222" font-family="Arial, sans-serif">DTU</text>
+<text x="1239.4545454545455" y="555" font-size="12" font-weight="400" text-anchor="middle" fill="#222" font-family="Arial, sans-serif">16f</text>
+<rect x="1307.6363636363635" y="376.66666666666663" width="108.36363636363636" height="2" fill="#B8B8B8" stroke="#333"/>
+<text x="1361.8181818181818" y="396.53786744437264" font-size="12" font-weight="700" text-anchor="middle" fill="#222" font-family="Arial, sans-serif">-0.1%</text>
+<text x="1361.8181818181818" y="538" font-size="12" font-weight="400" text-anchor="middle" fill="#222" font-family="Arial, sans-serif">DTU</text>
+<text x="1361.8181818181818" y="555" font-size="12" font-weight="400" text-anchor="middle" fill="#222" font-family="Arial, sans-serif">48f</text>
+<text x="55" y="381.66666666666663" font-size="13" font-weight="400" text-anchor="end" fill="#333" font-family="Arial, sans-serif">0</text>
+<text x="90" y="585" font-size="24" font-weight="700" text-anchor="start" fill="#111" font-family="Arial, sans-serif">Best CD count</text>
+<rect x="160" y="646.6666666666666" width="110" height="183.33333333333334" fill="#8A8A8A" stroke="#333"/>
+<text x="215.0" y="636.6666666666666" font-size="24" font-weight="700" text-anchor="middle" fill="#111" font-family="Arial, sans-serif">5</text>
+<text x="215.0" y="858" font-size="15" font-weight="400" text-anchor="middle" fill="#111" font-family="Arial, sans-serif">Baseline</text>
+<rect x="320" y="793.3333333333334" width="110" height="36.666666666666664" fill="#4C78A8" stroke="#333"/>
+<text x="375.0" y="783.3333333333334" font-size="24" font-weight="700" text-anchor="middle" fill="#111" font-family="Arial, sans-serif">1</text>
+<text x="375.0" y="858" font-size="15" font-weight="400" text-anchor="middle" fill="#111" font-family="Arial, sans-serif">Dynamic</text>
+<rect x="480" y="646.6666666666666" width="110" height="183.33333333333334" fill="#2E8B57" stroke="#333"/>
+<text x="535.0" y="636.6666666666666" font-size="24" font-weight="700" text-anchor="middle" fill="#111" font-family="Arial, sans-serif">5</text>
+<text x="535.0" y="858" font-size="15" font-weight="400" text-anchor="middle" fill="#111" font-family="Arial, sans-serif">QT-Bipartite</text>
+<line x1="90" y1="830" x2="660" y2="830" stroke="#333" stroke-width="1"/>
+<text x="90" y="888" font-size="16" font-weight="700" text-anchor="start" fill="#2E8B57" font-family="Arial, sans-serif">QT-Bipartite wins quality on 4 / 11 evaluated settings.</text>
+<text x="800" y="585" font-size="24" font-weight="700" text-anchor="start" fill="#111" font-family="Arial, sans-serif">Winner count by metric</text>
+<rect x="840" y="730.0" width="38" height="100.0" fill="#2E8B57" stroke="#333"/>
+<text x="859.0" y="724.0" font-size="12" font-weight="700" text-anchor="middle" fill="#111" font-family="Arial, sans-serif">5</text>
+<rect x="882" y="770.0" width="38" height="60.0" fill="#F28E2B" stroke="#333"/>
+<text x="901.0" y="764.0" font-size="12" font-weight="700" text-anchor="middle" fill="#111" font-family="Arial, sans-serif">3</text>
+<rect x="924" y="830.0" width="38" height="0.0" fill="#4C78A8" stroke="#333"/>
+<text x="943.0" y="824.0" font-size="12" font-weight="700" text-anchor="middle" fill="#111" font-family="Arial, sans-serif">0</text>
+<text x="882" y="858" font-size="15" font-weight="400" text-anchor="middle" fill="#111" font-family="Arial, sans-serif">Baseline</text>
+<rect x="1015" y="810.0" width="38" height="20.0" fill="#2E8B57" stroke="#333"/>
+<text x="1034.0" y="804.0" font-size="12" font-weight="700" text-anchor="middle" fill="#111" font-family="Arial, sans-serif">1</text>
+<rect x="1057" y="750.0" width="38" height="80.0" fill="#F28E2B" stroke="#333"/>
+<text x="1076.0" y="744.0" font-size="12" font-weight="700" text-anchor="middle" fill="#111" font-family="Arial, sans-serif">4</text>
+<rect x="1099" y="610.0" width="38" height="220.0" fill="#4C78A8" stroke="#333"/>
+<text x="1118.0" y="604.0" font-size="12" font-weight="700" text-anchor="middle" fill="#111" font-family="Arial, sans-serif">11</text>
+<text x="1057" y="858" font-size="15" font-weight="400" text-anchor="middle" fill="#111" font-family="Arial, sans-serif">Dynamic</text>
+<rect x="1190" y="730.0" width="38" height="100.0" fill="#2E8B57" stroke="#333"/>
+<text x="1209.0" y="724.0" font-size="12" font-weight="700" text-anchor="middle" fill="#111" font-family="Arial, sans-serif">5</text>
+<rect x="1232" y="750.0" width="38" height="80.0" fill="#F28E2B" stroke="#333"/>
+<text x="1251.0" y="744.0" font-size="12" font-weight="700" text-anchor="middle" fill="#111" font-family="Arial, sans-serif">4</text>
+<rect x="1274" y="830.0" width="38" height="0.0" fill="#4C78A8" stroke="#333"/>
+<text x="1293.0" y="824.0" font-size="12" font-weight="700" text-anchor="middle" fill="#111" font-family="Arial, sans-serif">0</text>
+<text x="1232" y="858" font-size="15" font-weight="400" text-anchor="middle" fill="#111" font-family="Arial, sans-serif">QT-Bipartite</text>
+<line x1="800" y1="830" x2="1370" y2="830" stroke="#333" stroke-width="1"/>
+<rect x="825" y="885" width="18" height="18" fill="#2E8B57" stroke="#333"/>
+<text x="850" y="900" font-size="14" font-weight="400" text-anchor="start" fill="#111" font-family="Arial, sans-serif">Best CD</text>
+<rect x="990" y="885" width="18" height="18" fill="#F28E2B" stroke="#333"/>
+<text x="1015" y="900" font-size="14" font-weight="400" text-anchor="start" fill="#111" font-family="Arial, sans-serif">Best Speed</text>
+<rect x="1155" y="885" width="18" height="18" fill="#4C78A8" stroke="#333"/>
+<text x="1180" y="900" font-size="14" font-weight="400" text-anchor="start" fill="#111" font-family="Arial, sans-serif">Best Compression</text>
+<text x="750" y="875" font-size="14" font-weight="400" text-anchor="middle" fill="#555" font-family="Arial, sans-serif">Metric: Chamfer Distance lower is better. Compression winner is based on smallest merged-token count.</text>
+</svg>

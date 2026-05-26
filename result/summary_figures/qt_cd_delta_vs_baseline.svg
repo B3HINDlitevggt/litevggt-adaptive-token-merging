@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="850" viewBox="0 0 1400 850">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<text x="60" y="70" font-family="Arial, sans-serif" font-size="34" font-weight="700" text-anchor="start" fill="#111">QT-Bipartite CD Change vs Baseline</text>
+<text x="60" y="105" font-family="Arial, sans-serif" font-size="18" font-weight="400" text-anchor="start" fill="#555">Positive means lower Chamfer Distance than Baseline</text>
+<line x1="70" y1="170.0" x2="1330" y2="170.0" stroke="#ddd" stroke-width="1"/>
+<line x1="70" y1="258.0" x2="1330" y2="258.0" stroke="#ddd" stroke-width="1"/>
+<line x1="70" y1="346.0" x2="1330" y2="346.0" stroke="#ddd" stroke-width="1"/>
+<line x1="70" y1="434.0" x2="1330" y2="434.0" stroke="#ddd" stroke-width="1"/>
+<line x1="70" y1="522.0" x2="1330" y2="522.0" stroke="#ddd" stroke-width="1"/>
+<line x1="70" y1="610.0" x2="1330" y2="610.0" stroke="#ddd" stroke-width="1"/>
+<line x1="70" y1="346.0" x2="1330" y2="346.0" stroke="#222" stroke-width="1.2"/>
+<rect x="80.0" y="248.82540465893493" width="63.529411764705884" height="97.17459534106507" fill="#2E8B57" stroke="#333" stroke-width="0.8"/>
+<text x="111.76470588235294" y="241.82540465893493" font-family="Arial, sans-serif" font-size="10" font-weight="700" text-anchor="middle" fill="#111">+3.3</text>
+<text x="111.76470588235294" y="635" font-family="Arial, sans-serif" font-size="10" font-weight="400" text-anchor="middle" fill="#111">spp1</text>
+<text x="111.76470588235294" y="650" font-family="Arial, sans-serif" font-size="10" font-weight="400" text-anchor="middle" fill="#111">96f</text>
+<rect x="153.52941176470588" y="346.0" width="63.529411764705884" height="82.43456851816029" fill="#B8B8B8" stroke="#333" stroke-width="0.8"/>
+<text x="185.29411764705884" y="444.4345685181603" font-family="Arial, sans-serif" font-size="10" font-weight="700" text-anchor="middle" fill="#111">-2.8</text>
+<text x="185.29411764705884" y="635" font-family="Arial, sans-serif" font-size="10" font-weight="400" text-anchor="middle" fill="#111">spp1</text>
+<text x="185.29411764705884" y="650" font-family="Arial, sans-serif" font-size="10" font-weight="400" text-anchor="middle" fill="#111">296f</text>
+<rect x="227.05882352941177" y="111.70282350153062" width="63.529411764705884" height="234.29717649846938" fill="#2E8B57" stroke="#333" stroke-width="0.8"/>
+<text x="258.8235294117647" y="104.70282350153062" font-family="Arial, sans-serif" font-size="10" font-weight="700" text-anchor="middle" fill="#111">+8.0</text>
+<text x="258.8235294117647" y="635" font-family="Arial, sans-serif" font-size="10" font-weight="400" text-anchor="middle" fill="#111">spp1</text>
+<text x="258.8235294117647" y="650" font-family="Arial, sans-serif" font-size="10" font-weight="400" text-anchor="middle" fill="#111">496f</text>
+<rect x="300.5882352941177" y="268.06452806792066" width="63.529411764705884" height="77.93547193207934" fill="#2E8B57" stroke="#333" stroke-width="0.8"/>
+<text x="332.3529411764706" y="261.06452806792066" font-family="Arial, sans-serif" font-size="10" font-weight="700" text-anchor="middle" fill="#111">+2.7</text>
+<text x="332.3529411764706" y="635" font-family="Arial, sans-serif" font-size="10" font-weight="400" text-anchor="middle" fill="#111">spp2</text>
+<text x="332.3529411764706" y="650" font-family="Arial, sans-serif" font-size="10" font-weight="400" text-anchor="middle" fill="#111">96f</text>
+<rect x="374.11764705882354" y="261.40933700282415" width="63.529411764705884" height="84.59066299717585" fill="#2E8B57" stroke="#333" stroke-width="0.8"/>
+<text x="405.88235294117646" y="254.40933700282415" font-family="Arial, sans-serif" font-size="10" font-weight="700" text-anchor="middle" fill="#111">+2.9</text>
+<text x="405.88235294117646" y="635" font-family="Arial, sans-serif" font-size="10" font-weight="400" text-anchor="middle" fill="#111">spp2</text>
+<text x="405.88235294117646" y="650" font-family="Arial, sans-serif" font-size="10" font-weight="400" text-anchor="middle" fill="#111">296f</text>
+<rect x="447.6470588235294" y="346.0" width="63.529411764705884" height="93.0928841041843" fill="#B8B8B8" stroke="#333" stroke-width="0.8"/>
+<text x="479.4117647058823" y="455.0928841041843" font-family="Arial, sans-serif" font-size="10" font-weight="700" text-anchor="middle" fill="#111">-3.2</text>
+<text x="479.4117647058823" y="635" font-family="Arial, sans-serif" font-size="10" font-weight="400" text-anchor="middle" fill="#111">spp2</text>
+<text x="479.4117647058823" y="650" font-family="Arial, sans-serif" font-size="10" font-weight="400" text-anchor="middle" fill="#111">496f</text>
+<rect x="521.1764705882354" y="346.0" width="63.529411764705884" height="8.490680141561938" fill="#B8B8B8" stroke="#333" stroke-width="0.8"/>
+<text x="552.9411764705883" y="370.49068014156194" font-family="Arial, sans-serif" font-size="10" font-weight="700" text-anchor="middle" fill="#111">-0.3</text>
+<text x="552.9411764705883" y="635" font-family="Arial, sans-serif" font-size="10" font-weight="400" text-anchor="middle" fill="#111">s2</text>
+<text x="552.9411764705883" y="650" font-family="Arial, sans-serif" font-size="10" font-weight="400" text-anchor="middle" fill="#111">96f</text>
+<rect x="594.7058823529412" y="346.0" width="63.529411764705884" height="50.40461429478762" fill="#B8B8B8" stroke="#333" stroke-width="0.8"/>
+<text x="626.4705882352941" y="412.4046142947876" font-family="Arial, sans-serif" font-size="10" font-weight="700" text-anchor="middle" fill="#111">-1.7</text>
+<text x="626.4705882352941" y="635" font-family="Arial, sans-serif" font-size="10" font-weight="400" text-anchor="middle" fill="#111">s2</text>
+<text x="626.4705882352941" y="650" font-family="Arial, sans-serif" font-size="10" font-weight="400" text-anchor="middle" fill="#111">296f</text>
+<rect x="668.2352941176471" y="346.0" width="63.529411764705884" height="118.95977322908959" fill="#B8B8B8" stroke="#333" stroke-width="0.8"/>
+<text x="700.0" y="480.9597732290896" font-family="Arial, sans-serif" font-size="10" font-weight="700" text-anchor="middle" fill="#111">-4.1</text>
+<text x="700.0" y="635" font-family="Arial, sans-serif" font-size="10" font-weight="400" text-anchor="middle" fill="#111">s2</text>
+<text x="700.0" y="650" font-family="Arial, sans-serif" font-size="10" font-weight="400" text-anchor="middle" fill="#111">496f</text>
+<rect x="741.7647058823529" y="342.6717321897619" width="63.529411764705884" height="3.328267810238117" fill="#2E8B57" stroke="#333" stroke-width="0.8"/>
+<text x="773.5294117647059" y="335.6717321897619" font-family="Arial, sans-serif" font-size="10" font-weight="700" text-anchor="middle" fill="#111">+0.1</text>
+<text x="773.5294117647059" y="635" font-family="Arial, sans-serif" font-size="10" font-weight="400" text-anchor="middle" fill="#111">DTU</text>
+<text x="773.5294117647059" y="650" font-family="Arial, sans-serif" font-size="10" font-weight="400" text-anchor="middle" fill="#111">16f</text>
+<rect x="815.2941176470588" y="346.0" width="63.529411764705884" height="2.058320855476552" fill="#B8B8B8" stroke="#333" stroke-width="0.8"/>
+<text x="847.0588235294117" y="364.05832085547655" font-family="Arial, sans-serif" font-size="10" font-weight="700" text-anchor="middle" fill="#111">-0.1</text>
+<text x="847.0588235294117" y="635" font-family="Arial, sans-serif" font-size="10" font-weight="400" text-anchor="middle" fill="#111">DTU</text>
+<text x="847.0588235294117" y="650" font-family="Arial, sans-serif" font-size="10" font-weight="400" text-anchor="middle" fill="#111">48f</text>
+<rect x="888.8235294117648" y="340.14938912446814" width="63.529411764705884" height="5.850610875531856" fill="#2E8B57" stroke="#333" stroke-width="0.8"/>
+<text x="920.5882352941177" y="333.14938912446814" font-family="Arial, sans-serif" font-size="10" font-weight="700" text-anchor="middle" fill="#111">+0.2</text>
+<text x="920.5882352941177" y="635" font-family="Arial, sans-serif" font-size="10" font-weight="400" text-anchor="middle" fill="#111">s1</text>
+<text x="920.5882352941177" y="650" font-family="Arial, sans-serif" font-size="10" font-weight="400" text-anchor="middle" fill="#111">96f</text>
+<rect x="962.3529411764706" y="270.2196388945348" width="63.529411764705884" height="75.7803611054652" fill="#2E8B57" stroke="#333" stroke-width="0.8"/>
+<text x="994.1176470588235" y="263.2196388945348" font-family="Arial, sans-serif" font-size="10" font-weight="700" text-anchor="middle" fill="#111">+2.6</text>
+<text x="994.1176470588235" y="635" font-family="Arial, sans-serif" font-size="10" font-weight="400" text-anchor="middle" fill="#111">s1</text>
+<text x="994.1176470588235" y="650" font-family="Arial, sans-serif" font-size="10" font-weight="400" text-anchor="middle" fill="#111">296f</text>
+<rect x="1035.8823529411766" y="346.0" width="63.529411764705884" height="36.129286421177085" fill="#B8B8B8" stroke="#333" stroke-width="0.8"/>
+<text x="1067.6470588235295" y="398.1292864211771" font-family="Arial, sans-serif" font-size="10" font-weight="700" text-anchor="middle" fill="#111">-1.2</text>
+<text x="1067.6470588235295" y="635" font-family="Arial, sans-serif" font-size="10" font-weight="400" text-anchor="middle" fill="#111">s1</text>
+<text x="1067.6470588235295" y="650" font-family="Arial, sans-serif" font-size="10" font-weight="400" text-anchor="middle" fill="#111">496f</text>
+<rect x="1109.4117647058824" y="321.85957087042044" width="63.529411764705884" height="24.14042912957956" fill="#2E8B57" stroke="#333" stroke-width="0.8"/>
+<text x="1141.1764705882354" y="314.85957087042044" font-family="Arial, sans-serif" font-size="10" font-weight="700" text-anchor="middle" fill="#111">+0.8</text>
+<text x="1141.1764705882354" y="635" font-family="Arial, sans-serif" font-size="10" font-weight="400" text-anchor="middle" fill="#111">spp3</text>
+<text x="1141.1764705882354" y="650" font-family="Arial, sans-serif" font-size="10" font-weight="400" text-anchor="middle" fill="#111">96f</text>
+<rect x="1182.9411764705883" y="346.0" width="63.529411764705884" height="79.55215620772378" fill="#B8B8B8" stroke="#333" stroke-width="0.8"/>
+<text x="1214.7058823529412" y="441.5521562077238" font-family="Arial, sans-serif" font-size="10" font-weight="700" text-anchor="middle" fill="#111">-2.7</text>
+<text x="1214.7058823529412" y="635" font-family="Arial, sans-serif" font-size="10" font-weight="400" text-anchor="middle" fill="#111">spp3</text>
+<text x="1214.7058823529412" y="650" font-family="Arial, sans-serif" font-size="10" font-weight="400" text-anchor="middle" fill="#111">296f</text>
+<rect x="1256.4705882352941" y="346.0" width="63.529411764705884" height="177.62366740719926" fill="#B8B8B8" stroke="#333" stroke-width="0.8"/>
+<text x="1288.235294117647" y="539.6236674071993" font-family="Arial, sans-serif" font-size="10" font-weight="700" text-anchor="middle" fill="#111">-6.1</text>
+<text x="1288.235294117647" y="635" font-family="Arial, sans-serif" font-size="10" font-weight="400" text-anchor="middle" fill="#111">spp3</text>
+<text x="1288.235294117647" y="650" font-family="Arial, sans-serif" font-size="10" font-weight="400" text-anchor="middle" fill="#111">496f</text>
+<text x="700" y="770" font-family="Arial, sans-serif" font-size="22" font-weight="700" text-anchor="middle" fill="#2E8B57">Average QT CD change vs Baseline: -0.09%  |  Best-CD wins: 7 / 17 settings</text>
+</svg>

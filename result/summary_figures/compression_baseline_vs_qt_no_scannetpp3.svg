@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="850" viewBox="0 0 1400 850">
+<rect width="100%" height="100%" fill="#fff"/>
+<text x="60" y="70" font-family="Arial, sans-serif" font-size="34" font-weight="700" text-anchor="start" fill="#111">Average Token Compression</text>
+<text x="60" y="105" font-family="Arial, sans-serif" font-size="18" font-weight="400" text-anchor="start" fill="#555">Baseline vs QT-Bipartite, excluding scannetpp3</text>
+<line x1="160" y1="170.0" x2="1140" y2="170.0" stroke="#ddd" stroke-width="1"/>
+<text x="140" y="175.0" font-family="Arial, sans-serif" font-size="14" font-weight="400" text-anchor="end" fill="#555">100%</text>
+<line x1="160" y1="270.0" x2="1140" y2="270.0" stroke="#ddd" stroke-width="1"/>
+<text x="140" y="275.0" font-family="Arial, sans-serif" font-size="14" font-weight="400" text-anchor="end" fill="#555">80%</text>
+<line x1="160" y1="370.0" x2="1140" y2="370.0" stroke="#ddd" stroke-width="1"/>
+<text x="140" y="375.0" font-family="Arial, sans-serif" font-size="14" font-weight="400" text-anchor="end" fill="#555">60%</text>
+<line x1="160" y1="470.0" x2="1140" y2="470.0" stroke="#ddd" stroke-width="1"/>
+<text x="140" y="475.0" font-family="Arial, sans-serif" font-size="14" font-weight="400" text-anchor="end" fill="#555">40%</text>
+<line x1="160" y1="570.0" x2="1140" y2="570.0" stroke="#ddd" stroke-width="1"/>
+<text x="140" y="575.0" font-family="Arial, sans-serif" font-size="14" font-weight="400" text-anchor="end" fill="#555">20%</text>
+<line x1="160" y1="670.0" x2="1140" y2="670.0" stroke="#ddd" stroke-width="1"/>
+<text x="140" y="675.0" font-family="Arial, sans-serif" font-size="14" font-weight="400" text-anchor="end" fill="#555">0%</text>
+<rect x="380" y="341.07142857142856" width="210" height="328.92857142857144" fill="#8A8A8A" stroke="#333" stroke-width="0.8"/>
+<text x="485.0" y="323.07142857142856" font-family="Arial, sans-serif" font-size="30" font-weight="700" text-anchor="middle" fill="#111">65.8%</text>
+<text x="485.0" y="715" font-family="Arial, sans-serif" font-size="20" font-weight="700" text-anchor="middle" fill="#111">Baseline</text>
+<rect x="710" y="246.42857142857144" width="210" height="423.57142857142856" fill="#2E8B57" stroke="#333" stroke-width="0.8"/>
+<text x="815.0" y="228.42857142857144" font-family="Arial, sans-serif" font-size="30" font-weight="700" text-anchor="middle" fill="#111">84.7%</text>
+<text x="815.0" y="715" font-family="Arial, sans-serif" font-size="20" font-weight="700" text-anchor="middle" fill="#111">QT-Bipartite</text>
+<line x1="160" y1="670" x2="1140" y2="670" stroke="#333" stroke-width="1.2"/>
+<text x="700" y="790" font-family="Arial, sans-serif" font-size="22" font-weight="700" text-anchor="middle" fill="#2E8B57">QT-Bipartite increases average compression by 18.9 percentage points over Baseline.</text>
+</svg>

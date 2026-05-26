@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="850" viewBox="0 0 1400 850">
+<rect width="100%" height="100%" fill="#fff"/>
+<text x="60" y="70" font-family="Arial, sans-serif" font-size="34" font-weight="700" text-anchor="start" fill="#111">Method-Level Summary Including Dynamic All</text>
+<text x="60" y="105" font-family="Arial, sans-serif" font-size="18" font-weight="400" text-anchor="start" fill="#555">Averages across all settings, excluding scannetpp3</text>
+<text x="80" y="155" font-family="Arial, sans-serif" font-size="20" font-weight="700" text-anchor="start" fill="#111">Avg Compression (%)</text>
+<line x1="80" y1="580" x2="410" y2="580" stroke="#333" stroke-width="1"/>
+<rect x="115" y="323.43571428571425" width="70" height="256.56428571428575" fill="#8A8A8A" stroke="#333" stroke-width="0.8"/>
+<text x="150.0" y="315.43571428571425" font-family="Arial, sans-serif" font-size="13" font-weight="700" text-anchor="middle" fill="#111">65.8</text>
+<text x="150.0" y="610" font-family="Arial, sans-serif" font-size="12" font-weight="400" text-anchor="middle" fill="#111">Baseline</text>
+<rect x="210" y="241.92571428571426" width="70" height="338.07428571428574" fill="#4C78A8" stroke="#333" stroke-width="0.8"/>
+<text x="245.0" y="233.92571428571426" font-family="Arial, sans-serif" font-size="13" font-weight="700" text-anchor="middle" fill="#111">86.7</text>
+<text x="245.0" y="610" font-family="Arial, sans-serif" font-size="12" font-weight="400" text-anchor="middle" fill="#111">Dynamic</text>
+<rect x="305" y="249.6142857142857" width="70" height="330.3857142857143" fill="#2E8B57" stroke="#333" stroke-width="0.8"/>
+<text x="340.0" y="241.6142857142857" font-family="Arial, sans-serif" font-size="13" font-weight="700" text-anchor="middle" fill="#111">84.7</text>
+<text x="340.0" y="610" font-family="Arial, sans-serif" font-size="12" font-weight="400" text-anchor="middle" fill="#111">QT-Bipartite</text>
+<text x="510" y="155" font-family="Arial, sans-serif" font-size="20" font-weight="700" text-anchor="start" fill="#111">Avg CD Change vs Baseline (%)</text>
+<line x1="510" y1="385.0" x2="840" y2="385.0" stroke="#333" stroke-width="1"/>
+<rect x="545" y="385.0" width="70" height="2" fill="#8A8A8A" stroke="#333" stroke-width="0.8"/>
+<text x="580.0" y="377.0" font-family="Arial, sans-serif" font-size="13" font-weight="700" text-anchor="middle" fill="#111">+0.00</text>
+<text x="580.0" y="610" font-family="Arial, sans-serif" font-size="12" font-weight="400" text-anchor="middle" fill="#111">Baseline</text>
+<rect x="640" y="385.0" width="70" height="34.638840024196384" fill="#4C78A8" stroke="#333" stroke-width="0.8"/>
+<text x="675.0" y="435.6388400241964" font-family="Arial, sans-serif" font-size="13" font-weight="700" text-anchor="middle" fill="#111">-0.53</text>
+<text x="675.0" y="610" font-family="Arial, sans-serif" font-size="12" font-weight="400" text-anchor="middle" fill="#111">Dynamic</text>
+<rect x="735" y="355.3405286492374" width="70" height="29.6594713507626" fill="#2E8B57" stroke="#333" stroke-width="0.8"/>
+<text x="770.0" y="347.3405286492374" font-family="Arial, sans-serif" font-size="13" font-weight="700" text-anchor="middle" fill="#111">+0.46</text>
+<text x="770.0" y="610" font-family="Arial, sans-serif" font-size="12" font-weight="400" text-anchor="middle" fill="#111">QT-Bipartite</text>
+<text x="940" y="155" font-family="Arial, sans-serif" font-size="20" font-weight="700" text-anchor="start" fill="#111">Avg Speedup vs Baseline (x)</text>
+<line x1="940" y1="580" x2="1270" y2="580" stroke="#333" stroke-width="1"/>
+<rect x="975" y="320.0" width="70" height="260.0" fill="#8A8A8A" stroke="#333" stroke-width="0.8"/>
+<text x="1010.0" y="312.0" font-family="Arial, sans-serif" font-size="13" font-weight="700" text-anchor="middle" fill="#111">1.00x</text>
+<text x="1010.0" y="610" font-family="Arial, sans-serif" font-size="12" font-weight="400" text-anchor="middle" fill="#111">Baseline</text>
+<rect x="1070" y="289.33989174569797" width="70" height="290.66010825430203" fill="#4C78A8" stroke="#333" stroke-width="0.8"/>
+<text x="1105.0" y="281.33989174569797" font-family="Arial, sans-serif" font-size="13" font-weight="700" text-anchor="middle" fill="#111">1.12x</text>
+<text x="1105.0" y="610" font-family="Arial, sans-serif" font-size="12" font-weight="400" text-anchor="middle" fill="#111">Dynamic</text>
+<rect x="1165" y="288.0698216262437" width="70" height="291.9301783737563" fill="#2E8B57" stroke="#333" stroke-width="0.8"/>
+<text x="1200.0" y="280.0698216262437" font-family="Arial, sans-serif" font-size="13" font-weight="700" text-anchor="middle" fill="#111">1.12x</text>
+<text x="1200.0" y="610" font-family="Arial, sans-serif" font-size="12" font-weight="400" text-anchor="middle" fill="#111">QT-Bipartite</text>
+<text x="700" y="810" font-family="Arial, sans-serif" font-size="20" font-weight="700" text-anchor="middle" fill="#222">Dynamic All maximizes compression; QT-Bipartite provides stronger adaptive compression than Baseline with selected quality gains.</text>
+</svg>
