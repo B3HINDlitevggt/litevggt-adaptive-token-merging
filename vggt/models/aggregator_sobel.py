@@ -8,8 +8,10 @@
 # 바꿀 수 있는 Parameter :
 #   use_info_dedup: bool = True,   # master switch
 #   min_dedup_frames: int = 2,     # always keep at least this many frames
-#   max_drop_ratio: float = 0.50,  # never drop more than this fraction of frames
-#   score_floor: float = 0.11,      # hard quality gate: drop frames below this score
+#   max_drop_ratio: float = 0.30,  # never drop more than this fraction of frames
+#   info_tau: float = 0.12,        # minimum map difference needed to keep a frame
+#   ssim_weight: float = 0.50,     # SSIM vs photometric similarity blend
+#   window_size: int = 4,          # recent kept frames used as diversity reference
 
 import logging
 import cv2
@@ -85,8 +87,11 @@ class Aggregator(nn.Module):
         # --- Info-map based frame selection ---
         use_info_dedup: bool = True,   # master switch
         min_dedup_frames: int = 2,     # always keep at least this many frames
-        max_drop_ratio: float = 0.50,  # never drop more than this fraction of frames
-        score_floor: float = 0.11,      # hard quality gate: drop frames below this score
+        max_drop_ratio: float = 0.30,  # never drop more than this fraction of frames
+        score_floor: float = 0.11,     # kept for backward-compatible configs
+        info_tau: float = 0.12,
+        ssim_weight: float = 0.50,
+        window_size: int = 4,
     ):
         super().__init__()
 
@@ -173,6 +178,9 @@ class Aggregator(nn.Module):
         self.min_dedup_frames = min_dedup_frames
         self.max_drop_ratio = max_drop_ratio
         self.score_floor = score_floor
+        self.info_tau = info_tau
+        self.ssim_weight = ssim_weight
+        self.window_size = window_size
 
         self.use_dynamic_protect = False
         self.use_dynamic_grid = False
@@ -417,6 +425,26 @@ class Aggregator(nn.Module):
     #     print(f"[Sobel CPU pre-select] {S} → {len(selected)} frames")
     #     return selected
 
+    def _map_similarity(self, a: torch.Tensor, b: torch.Tensor) -> float:
+        """SSIM + photometric similarity between two info maps [Hp, Wp] in [0,1].
+        Returns a score in [0,1] where 1 = identical."""
+        photo_sim = 1.0 - (a - b).abs().mean().item()
+
+        mu_a = a.mean()
+        mu_b = b.mean()
+        var_a = ((a - mu_a) ** 2).mean()
+        var_b = ((b - mu_b) ** 2).mean()
+        cov = ((a - mu_a) * (b - mu_b)).mean()
+        C1, C2 = 0.01 ** 2, 0.03 ** 2
+        ssim = float(
+            ((2 * mu_a * mu_b + C1) * (2 * cov + C2)) /
+            ((mu_a ** 2 + mu_b ** 2 + C1) * (var_a + var_b + C2))
+        )
+        ssim = max(0.0, min(1.0, ssim))
+        photo_sim = max(0.0, min(1.0, photo_sim))
+
+        return self.ssim_weight * ssim + (1.0 - self.ssim_weight) * photo_sim
+
     def _select_diverse_frames(
         self,
         info_map: torch.Tensor,
@@ -425,46 +453,55 @@ class Aggregator(nn.Module):
         device: torch.device,
     ) -> torch.Tensor:
         """
-        Keep the frames with the highest average information score.
+        Greedy diversity selection using SSIM + photometric similarity on info maps.
 
-        info_map is [B*S, 1, Hp, Wp] where each value in [0,1] represents
-        patch informativeness (edge strength + feature variance). Frames with
-        low mean scores are blurry or featureless and contribute little to
-        reconstruction — they are dropped first.
+        Always keeps frame 0. For each subsequent frame, computes combined
+        SSIM + photometric similarity between its info map and the union of
+        selected frames' info maps. If similarity is too high (diff < info_tau),
+        the frame is redundant and dropped. Floor constraints ensure at least
+        min_keep frames kept.
         """
         import math
         min_keep = max(math.ceil(S * (1.0 - self.max_drop_ratio)), self.min_dedup_frames)
 
-        # Mean info score per frame, averaged across batch
-        # info_map: [B*S, 1, Hp, Wp] → [B, S] → [S]
-        scores = info_map.float().view(B, S, -1).mean(dim=-1).mean(dim=0)  # [S]
+        # Per-frame info maps averaged across batch: [S, Hp, Wp]
+        Hp, Wp = info_map.shape[-2], info_map.shape[-1]
+        maps = info_map.float().view(B, S, Hp, Wp).mean(dim=0)
 
-        # Primary gate: keep all frames with score >= score_floor
-        above = (scores >= self.score_floor).nonzero(as_tuple=True)[0]
+        # Greedy: keep frame 0 unconditionally, maintain sliding window of last kept maps
+        selected_idx = [0]
+        window = [maps[0]]
 
-        # Safety: if score_floor drops too many, add back the highest-scoring dropped frames
-        if above.shape[0] < min_keep:
-            below = (scores < self.score_floor).nonzero(as_tuple=True)[0]
-            extra = below[scores[below].argsort(descending=True)[: min_keep - above.shape[0]]]
-            selected_idx = torch.cat([above, extra])
-        else:
-            selected_idx = above
+        for c in range(1, S):
+            cand = maps[c]
+            window_map = torch.stack(window[-self.window_size:]).max(dim=0).values
+            sim = self._map_similarity(cand, window_map)
+            diff = 1.0 - sim
+            if diff >= self.info_tau:
+                selected_idx.append(c)
+                window.append(cand)
 
-        if 0 not in selected_idx.tolist():
-            selected_idx = torch.cat([torch.zeros(1, dtype=torch.long, device=selected_idx.device), selected_idx])
-        selected, _ = selected_idx.sort()
+        # Floor enforcement: add back most-dissimilar dropped frames if too few kept
+        if len(selected_idx) < min_keep:
+            selected_set = set(selected_idx)
+            dropped = [i for i in range(S) if i not in selected_set]
+            window_map = torch.stack(window[-self.window_size:]).max(dim=0).values
+            drop_diffs = [
+                1.0 - self._map_similarity(maps[i], window_map)
+                for i in dropped
+            ]
+            order = sorted(range(len(dropped)), key=lambda k: drop_diffs[k], reverse=True)
+            for k in order[:min_keep - len(selected_idx)]:
+                selected_idx.append(dropped[k])
 
-        selected_set = set(selected.tolist())
-        frame_scores = {
-            i: {"score": round(scores[i].item(), 4), "kept": i in selected_set}
-            for i in range(S)
-        }
-        logger.info(
-            f"[infomap dedup] total={S}, min_keep={min_keep}, kept={len(selected)}, "
-            f"removed={S - len(selected)}, score_floor={self.score_floor}"
+        selected = torch.tensor(sorted(selected_idx), dtype=torch.long, device=device)
+
+        print(
+            f"[infomap dedup] total={S}, min_keep={min_keep}, kept={len(selected_idx)}, "
+            f"removed={S - len(selected_idx)}, info_tau={self.info_tau}, "
+            f"ssim_weight={self.ssim_weight}, window_size={self.window_size}"
         )
-        logger.info(f"[infomap dedup] kept indices: {selected.tolist()}")
-        logger.info(f"[infomap dedup] frame scores: {frame_scores}")
+        print(f"[infomap dedup] kept indices: {selected.tolist()}")
 
         return selected
 
