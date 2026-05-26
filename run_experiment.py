@@ -260,6 +260,16 @@ def select_frames_by_sobel(image_paths, n_keep):
     return [image_paths[i] for i in selected], selected, scores
 
 
+def select_frames_random(image_paths, n_keep, seed):
+    if n_keep is None or len(image_paths) <= n_keep:
+        selected = list(range(len(image_paths)))
+        return image_paths, selected
+
+    rng = np.random.default_rng(seed)
+    selected = sorted(int(i) for i in rng.choice(len(image_paths), size=n_keep, replace=False))
+    return [image_paths[i] for i in selected], selected
+
+
 def find_depth_file(depth_root, image_path):
     stem = os.path.splitext(os.path.basename(image_path))[0]
     candidates = [
@@ -349,8 +359,10 @@ def get_args_parser():
                         help="몇 번 merge를 재계산할지 (1/2/3/4)")
     parser.add_argument("--max_frames",           type=int,   default=None)
     parser.add_argument("--frame_selection",      type=str,   default="none",
-                        choices=["none", "sobel"],
+                        choices=["none", "sobel", "random"],
                         help="Input frame selection method before LiteVGGT inference")
+    parser.add_argument("--frame_selection_seed", type=int,   default=0,
+                        help="Random seed used when --frame_selection random")
     parser.add_argument("--ga_depth_dir",         type=str,   default=None)
     parser.add_argument("--ga_edge_weight",       type=float, default=0.7)
     parser.add_argument("--ga_variance_weight",   type=float, default=0.3)
@@ -428,6 +440,17 @@ def main(args):
         all_images, selected_indices, sobel_scores = select_frames_by_sobel(all_images, args.max_frames)
         print(f"✅ Sobel frame selection: {original_frame_count} -> {len(all_images)} frames")
         print(f"   selected indices: {selected_indices}")
+    elif args.frame_selection == "random":
+        all_images, selected_indices = select_frames_random(
+            all_images,
+            args.max_frames,
+            args.frame_selection_seed,
+        )
+        print(
+            f"✅ Random frame selection: {original_frame_count} -> {len(all_images)} frames "
+            f"(seed={args.frame_selection_seed})"
+        )
+        print(f"   selected indices: {selected_indices}")
     elif args.max_frames is not None:
         all_images = all_images[:args.max_frames]
         selected_indices = selected_indices[:args.max_frames]
@@ -450,6 +473,7 @@ def main(args):
     logger.header(args.img_dir, N_aligned, H, W, args.ckpt_path, cal_layer)
     logger.add("[Pipeline Options]")
     logger.add(f"  frame_selection          : {args.frame_selection}")
+    logger.add(f"  frame_selection_seed     : {args.frame_selection_seed}")
     logger.add(f"  original_frame_count     : {original_frame_count}")
     logger.add(f"  selected_frame_count     : {N_aligned}")
     logger.add(f"  selected_indices         : {selected_indices[:N_aligned]}")

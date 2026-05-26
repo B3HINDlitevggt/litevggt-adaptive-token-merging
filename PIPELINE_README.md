@@ -269,6 +269,8 @@ python3 run_experiment.py \
   --img_dir /data/drive_files/scannetpp1 \
   --output_dir outputs/final_pipeline_scannetpp1/litevggt \
   --mode baseline \
+  --frame_selection random \
+  --frame_selection_seed 0 \
   --max_frames 48 \
   --cal_layer_mode 4
 ```
