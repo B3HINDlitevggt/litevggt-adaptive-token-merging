@@ -55,6 +55,14 @@ class Aggregator(nn.Module):
         qk_norm=True,
         rope_freq=100,
         init_values=0.01,
+        # --- Info-map based frame deduplication ---
+        use_info_dedup: bool = True,
+        min_dedup_frames: int = 2,
+        max_drop_ratio: float = 0.15,
+        score_floor: float = 0.11,
+        info_tau: float = 0.12,
+        ssim_weight: float = 0.50,
+        window_size: int = 10,
     ):
         super().__init__()
 
@@ -157,6 +165,16 @@ class Aggregator(nn.Module):
         # DINOv2 / Frame Attention 청크 처리
         self.dino_chunk_size  = 64
         self.frame_chunk_size = 64
+
+        # Info-map based frame deduplication
+        self.use_info_dedup   = use_info_dedup
+        self.min_dedup_frames = min_dedup_frames
+        self.max_drop_ratio   = max_drop_ratio
+        self.score_floor      = score_floor
+        self.info_tau         = info_tau
+        self.ssim_weight      = ssim_weight
+        self.window_size      = window_size
+        self.last_sel_idx     = None
 
     def __build_patch_embed__(
         self,
@@ -316,6 +334,20 @@ class Aggregator(nn.Module):
                 info_map = info_maps["info_map"]
             protect_ratio = info_maps["protect_ratio"]
 
+        # GPU-side frame deduplication using info maps
+        sel_idx = None
+        S_prime = S
+        if self.use_info_dedup and S > 1:
+            dedup_map = info_map
+            if dedup_map is None:
+                dedup_map = compute_info_maps(images, patch_tokens)["info_map"]
+            if dedup_map is not None:
+                sel_idx = self._select_diverse_frames(dedup_map, B, S, images.device)
+                S_prime = sel_idx.shape[0]
+                if S_prime == S:
+                    sel_idx = None
+        self.last_sel_idx = sel_idx
+
         # Step 3: 특수 토큰 붙이기
         camera_token   = slice_expand_and_flatten(self.camera_token, B, S)
         register_token = slice_expand_and_flatten(self.register_token, B, S)
@@ -346,21 +378,52 @@ class Aggregator(nn.Module):
                         tokens, B, S, P, C, frame_idx, pos=pos_to_use
                     )
                 elif attn_type == "global":
-                    tokens, global_idx = self._process_global_attention(
-                        tokens,
-                        B,
-                        S,
-                        P,
-                        C,
-                        global_idx,
-                        pos=pos_to_use,
-                        info_map=info_map,
-                        protect_ratio=protect_ratio,
-                        protect_nms=self.ga_protect_nms,
-                        protect_aux_map=protect_aux_map,
-                        protect_aux_ratio=self.ga_depth_protect_ratio,
-                        use_adaptive_cache=use_adaptive_cache,
-                    )
+                    if sel_idx is not None:
+                        tokens_sel = (tokens.view(B, S, P, C)[:, sel_idx]
+                                      .contiguous().view(B * S_prime, P, C))
+                        pos_sel = (pos_to_use.view(B, S, P, 2)[:, sel_idx]
+                                   .contiguous().view(B * S_prime, P, 2)) if pos_to_use is not None else None
+                        info_map_sel = None
+                        if info_map is not None:
+                            n_ch = info_map.shape[1] if info_map.dim() == 4 else 1
+                            Hp, Wp = info_map.shape[-2:]
+                            info_map_sel = (info_map.view(B, S, n_ch, Hp, Wp)[:, sel_idx]
+                                            .contiguous().view(B * S_prime, n_ch, Hp, Wp))
+                        protect_aux_sel = None
+                        if protect_aux_map is not None:
+                            n_ch = protect_aux_map.shape[1] if protect_aux_map.dim() == 4 else 1
+                            Hp, Wp = protect_aux_map.shape[-2:]
+                            protect_aux_sel = (protect_aux_map.view(B, S, n_ch, Hp, Wp)[:, sel_idx]
+                                               .contiguous().view(B * S_prime, n_ch, Hp, Wp))
+                        tokens_sel, global_idx = self._process_global_attention(
+                            tokens_sel, B, S_prime, P, C, global_idx,
+                            pos=pos_sel,
+                            info_map=info_map_sel,
+                            protect_ratio=protect_ratio,
+                            protect_nms=self.ga_protect_nms,
+                            protect_aux_map=protect_aux_sel,
+                            protect_aux_ratio=self.ga_depth_protect_ratio,
+                            use_adaptive_cache=use_adaptive_cache,
+                        )
+                        tokens_2d = tokens.view(B, S, P, C)
+                        tokens_2d[:, sel_idx] = tokens_sel.view(B, S_prime, P, C)
+                        tokens = tokens_2d.view(B * S, P, C)
+                    else:
+                        tokens, global_idx = self._process_global_attention(
+                            tokens,
+                            B,
+                            S,
+                            P,
+                            C,
+                            global_idx,
+                            pos=pos_to_use,
+                            info_map=info_map,
+                            protect_ratio=protect_ratio,
+                            protect_nms=self.ga_protect_nms,
+                            protect_aux_map=protect_aux_map,
+                            protect_aux_ratio=self.ga_depth_protect_ratio,
+                            use_adaptive_cache=use_adaptive_cache,
+                        )
                 else:
                     raise ValueError(f"Unknown attention type: {attn_type}")
 
@@ -413,6 +476,74 @@ class Aggregator(nn.Module):
         self.ga_protect_max_ratio = protect_max_ratio
         self.ga_protect_nms = protect_nms
         self.ga_depth_protect_ratio = depth_protect_ratio
+
+    def _map_similarity(self, a: torch.Tensor, b: torch.Tensor) -> float:
+        """SSIM + photometric similarity between two info maps [Hp, Wp] in [0,1].
+        Returns a score in [0,1] where 1 = identical."""
+        photo_sim = 1.0 - (a - b).abs().mean().item()
+
+        mu_a = a.mean()
+        mu_b = b.mean()
+        var_a = ((a - mu_a) ** 2).mean()
+        var_b = ((b - mu_b) ** 2).mean()
+        cov   = ((a - mu_a) * (b - mu_b)).mean()
+        C1, C2 = 0.01 ** 2, 0.03 ** 2
+        ssim = float(
+            ((2 * mu_a * mu_b + C1) * (2 * cov + C2)) /
+            ((mu_a ** 2 + mu_b ** 2 + C1) * (var_a + var_b + C2))
+        )
+        ssim      = max(0.0, min(1.0, ssim))
+        photo_sim = max(0.0, min(1.0, photo_sim))
+        return self.ssim_weight * ssim + (1.0 - self.ssim_weight) * photo_sim
+
+    def _select_diverse_frames(
+        self,
+        info_map: torch.Tensor,
+        B: int,
+        S: int,
+        device: torch.device,
+    ) -> torch.Tensor:
+        """Greedy diversity selection using SSIM + photometric similarity on info maps.
+
+        Always keeps frame 0. Drops subsequent frames whose info map is too similar
+        (diff < info_tau) to the sliding window of recently kept frames.
+        Floor constraints ensure at least min_dedup_frames are kept.
+        """
+        import math
+        min_keep = max(math.ceil(S * (1.0 - self.max_drop_ratio)), self.min_dedup_frames)
+
+        Hp, Wp = info_map.shape[-2], info_map.shape[-1]
+        maps = info_map.float().view(B, S, Hp, Wp).mean(dim=0)  # [S, Hp, Wp]
+
+        selected_idx = [0]
+        window = [maps[0]]
+
+        for c in range(1, S):
+            cand       = maps[c]
+            window_map = torch.stack(window[-self.window_size:]).max(dim=0).values
+            sim        = self._map_similarity(cand, window_map)
+            if (1.0 - sim) >= self.info_tau:
+                selected_idx.append(c)
+                window.append(cand)
+
+        # Floor enforcement: restore most-dissimilar dropped frames if too few kept
+        if len(selected_idx) < min_keep:
+            selected_set = set(selected_idx)
+            dropped      = [i for i in range(S) if i not in selected_set]
+            window_map   = torch.stack(window[-self.window_size:]).max(dim=0).values
+            drop_diffs   = [1.0 - self._map_similarity(maps[i], window_map) for i in dropped]
+            order        = sorted(range(len(dropped)), key=lambda k: drop_diffs[k], reverse=True)
+            for k in order[: min_keep - len(selected_idx)]:
+                selected_idx.append(dropped[k])
+
+        selected = torch.tensor(sorted(selected_idx), dtype=torch.long, device=device)
+        print(
+            f"[infomap dedup] total={S}, min_keep={min_keep}, kept={len(selected_idx)}, "
+            f"removed={S - len(selected_idx)}, info_tau={self.info_tau}, "
+            f"ssim_weight={self.ssim_weight}, window_size={self.window_size}"
+        )
+        print(f"[infomap dedup] kept indices: {selected.tolist()}")
+        return selected
 
     def _process_frame_attention(self, tokens, B, S, P, C, frame_idx, pos=None):
         """Frame Attention 청크 처리 → Frame Attention MLP OOM 방지"""
