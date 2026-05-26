@@ -26,8 +26,10 @@ LiteVGGT Dynamic Token Merging 실험 스크립트
       --cal_layer_mode 4
 """
 
-import torch
 import os
+os.environ["VGGT_AGGREGATOR"] = "sobel"  # use aggregator_sobel.py (GPU-side info-map frame deduplication)
+
+import torch
 import numpy as np
 import argparse
 import time
@@ -498,11 +500,7 @@ def main(args):
     # 추론
     t_start = time.time()
     with torch.no_grad():
-        aggregated_tokens_list, patch_start_idx = model.aggregator(
-            images,
-            ga_depth=ga_depth,
-            use_adaptive_cache=args.use_adaptive_cache,
-        )
+        aggregated_tokens_list, patch_start_idx = model.aggregator(images)
 
         with torch.amp.autocast("cuda", enabled=True, dtype=dtype):
             pose_enc = model.camera_head(aggregated_tokens_list)[-1]
